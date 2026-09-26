@@ -1,0 +1,425 @@
+'use strict';
+/**
+ * ONVIF Compliance Tests
+ *
+ * These tests spin up an OnvifServer against a mock config and validate
+ * that every handler returns a spec-compliant response.
+ *
+ * Run: npm test
+ */
+
+const OnvifServerModule = require('../src/onvif-server');
+
+// ─── Mock logger ─────────────────────────────────────────────────────────────
+const noop   = () => {};
+const logger = { info: noop, debug: noop, warn: noop, error: noop, trace: noop };
+
+// ─── Minimal valid config ─────────────────────────────────────────────────────
+function buildConfig(overrides = {}) {
+    return {
+        hostname: '192.168.1.100',
+        ports:    { server: 8081, rtsp: 8554, snapshot: 8580 },
+        name:     'TestCamera',
+        uuid:     'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+        deviceInfo: {
+            manufacturer:    'Samsung',
+            model:           'SNH-V6414N',
+            firmwareVersion: '2.10.00_b43',
+            serialNumber:    'SN-TEST-0001',
+            hardwareId:      'SNH-V6414N-1001'
+        },
+        highQuality: {
+            rtsp: '/profile5/media.smp', snapshot: '/onvif/snapshot',
+            width: 1920, height: 1080, framerate: 15, bitrate: 2048, quality: 4
+        },
+        lowQuality: {
+            rtsp: '/profile1/media.smp', snapshot: '/onvif/snapshot',
+            width: 640, height: 360, framerate: 15, bitrate: 512, quality: 1
+        },
+        target: { hostname: '192.168.1.200', ports: { rtsp: 554, snapshot: 80 } },
+        ...overrides
+    };
+}
+
+function makeServer(overrides = {}) {
+    return OnvifServerModule.createServer(buildConfig(overrides), logger);
+}
+
+// ─── Tests ────────────────────────────────────────────────────────────────────
+
+describe('GetSystemDateAndTime', () => {
+    const server = makeServer();
+    const handler = server.onvif.DeviceService.Device.GetSystemDateAndTime;
+
+    it('returns DateTimeType', () => {
+        const res = handler({});
+        expect(res.SystemDateAndTime.DateTimeType).toBeDefined();
+    });
+
+    it('DateTimeType is NTP or Manual', () => {
+        const res = handler({});
+        expect(['NTP', 'Manual']).toContain(res.SystemDateAndTime.DateTimeType);
+    });
+
+    it('has DaylightSavings boolean', () => {
+        const res = handler({});
+        expect(typeof res.SystemDateAndTime.DaylightSavings).toBe('boolean');
+    });
+
+    it('has TimeZone.TZ string starting with UTC', () => {
+        const res = handler({});
+        expect(res.SystemDateAndTime.TimeZone.TZ).toMatch(/^UTC/);
+    });
+
+    it('has UTCDateTime with valid Hour/Minute/Second', () => {
+        const { Time } = handler({}).SystemDateAndTime.UTCDateTime;
+        expect(Time.Hour).toBeGreaterThanOrEqual(0);
+        expect(Time.Hour).toBeLessThan(24);
+        expect(Time.Minute).toBeGreaterThanOrEqual(0);
+        expect(Time.Minute).toBeLessThan(60);
+        expect(Time.Second).toBeGreaterThanOrEqual(0);
+        expect(Time.Second).toBeLessThan(60);
+    });
+
+    it('has UTCDateTime with valid Year/Month/Day', () => {
+        const { Date } = handler({}).SystemDateAndTime.UTCDateTime;
+        expect(Date.Year).toBeGreaterThan(2020);
+        expect(Date.Month).toBeGreaterThanOrEqual(1);
+        expect(Date.Month).toBeLessThanOrEqual(12);
+        expect(Date.Day).toBeGreaterThanOrEqual(1);
+        expect(Date.Day).toBeLessThanOrEqual(31);
+    });
+});
+
+describe('GetCapabilities', () => {
+    const server = makeServer();
+    const handler = server.onvif.DeviceService.Device.GetCapabilities;
+
+    it('returns Device capability when Category=Device', () => {
+        const res = handler({ Category: 'Device' });
+        expect(res.Capabilities.Device).toBeDefined();
+        expect(res.Capabilities.Media).toBeUndefined();
+    });
+
+    it('returns Media capability when Category=Media', () => {
+        const res = handler({ Category: 'Media' });
+        expect(res.Capabilities.Media).toBeDefined();
+        expect(res.Capabilities.Device).toBeUndefined();
+    });
+
+    it('returns all capabilities when Category=All', () => {
+        const res = handler({ Category: 'All' });
+        expect(res.Capabilities.Device).toBeDefined();
+        expect(res.Capabilities.Media).toBeDefined();
+    });
+
+    it('returns all capabilities when Category omitted', () => {
+        const res = handler({});
+        expect(res.Capabilities.Device).toBeDefined();
+        expect(res.Capabilities.Media).toBeDefined();
+    });
+
+    it('Device XAddr includes correct host and port', () => {
+        const res = handler({ Category: 'Device' });
+        expect(res.Capabilities.Device.XAddr).toContain('192.168.1.100');
+        expect(res.Capabilities.Device.XAddr).toContain('8081');
+    });
+
+    it('Media XAddr includes media_service path', () => {
+        const res = handler({ Category: 'Media' });
+        expect(res.Capabilities.Media.XAddr).toContain('/onvif/media_service');
+    });
+
+    it('Media has StreamingCapabilities', () => {
+        const res = handler({ Category: 'Media' });
+        expect(res.Capabilities.Media.StreamingCapabilities).toBeDefined();
+        expect(res.Capabilities.Media.StreamingCapabilities.RTP_RTSP_TCP).toBe(true);
+    });
+
+    it('advertises PTZ capability when ptz config present', () => {
+        const s = makeServer({ ptz: { port: 8080, username: 'admin', password: '4321' } });
+        const res = s.onvif.DeviceService.Device.GetCapabilities({ Category: 'All' });
+        expect(res.Capabilities.PTZ).toBeDefined();
+        expect(res.Capabilities.PTZ.XAddr).toContain('/onvif/ptz_service');
+    });
+});
+
+describe('GetServices', () => {
+    const server  = makeServer();
+    const handler = server.onvif.DeviceService.Device.GetServices;
+
+    it('returns an array with at least 2 services', () => {
+        const res = handler({});
+        expect(Array.isArray(res.Service)).toBe(true);
+        expect(res.Service.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('includes device service namespace', () => {
+        const res = handler({});
+        const ns  = res.Service.map(s => s.Namespace);
+        expect(ns).toContain('http://www.onvif.org/ver10/device/wsdl');
+    });
+
+    it('includes media service namespace', () => {
+        const res = handler({});
+        const ns  = res.Service.map(s => s.Namespace);
+        expect(ns).toContain('http://www.onvif.org/ver10/media/wsdl');
+    });
+
+    it('all services have Version with Major and Minor', () => {
+        const res = handler({});
+        for (const svc of res.Service) {
+            expect(svc.Version.Major).toBeDefined();
+            expect(svc.Version.Minor).toBeDefined();
+        }
+    });
+});
+
+describe('GetDeviceInformation', () => {
+    const server  = makeServer();
+    const handler = server.onvif.DeviceService.Device.GetDeviceInformation;
+
+    it('returns Manufacturer', () => {
+        expect(handler({}).Manufacturer).toBe('Samsung');
+    });
+    it('returns Model', () => {
+        expect(handler({}).Model).toBe('SNH-V6414N');
+    });
+    it('returns FirmwareVersion', () => {
+        expect(handler({}).FirmwareVersion).toBeDefined();
+    });
+    it('returns SerialNumber', () => {
+        expect(handler({}).SerialNumber).toBeDefined();
+    });
+    it('returns HardwareId', () => {
+        expect(handler({}).HardwareId).toBeDefined();
+    });
+});
+
+describe('GetScopes', () => {
+    const server  = makeServer();
+    const handler = server.onvif.DeviceService.Device.GetScopes;
+
+    it('returns Scopes array', () => {
+        const res = handler({});
+        expect(Array.isArray(res.Scopes)).toBe(true);
+        expect(res.Scopes.length).toBeGreaterThan(0);
+    });
+
+    it('has video_encoder type scope', () => {
+        const items = handler({}).Scopes.map(s => s.ScopeItem);
+        expect(items.some(i => i.includes('video_encoder'))).toBe(true);
+    });
+
+    it('has camera name scope', () => {
+        const items = handler({}).Scopes.map(s => s.ScopeItem);
+        expect(items.some(i => i.includes('TestCamera'))).toBe(true);
+    });
+});
+
+describe('GetNetworkInterfaces', () => {
+    const server  = makeServer();
+    const handler = server.onvif.DeviceService.Device.GetNetworkInterfaces;
+
+    it('returns NetworkInterfaces array', () => {
+        const res = handler({});
+        expect(Array.isArray(res.NetworkInterfaces)).toBe(true);
+    });
+
+    it('first interface has Enabled property', () => {
+        const res = handler({});
+        expect(res.NetworkInterfaces[0].Enabled).toBeDefined();
+    });
+});
+
+describe('GetProfiles', () => {
+    const server  = makeServer();
+    const handler = server.onvif.MediaService.Media.GetProfiles;
+
+    it('returns Profiles array with 2 entries', () => {
+        const res = handler({});
+        expect(Array.isArray(res.Profiles)).toBe(true);
+        expect(res.Profiles.length).toBe(2);
+    });
+
+    it('first profile has token attribute', () => {
+        const res = handler({});
+        expect(res.Profiles[0].attributes.token).toBeDefined();
+    });
+
+    it('first profile has VideoSourceConfiguration', () => {
+        const res = handler({});
+        expect(res.Profiles[0].VideoSourceConfiguration).toBeDefined();
+    });
+
+    it('first profile has VideoEncoderConfiguration with H264', () => {
+        const res = handler({});
+        expect(res.Profiles[0].VideoEncoderConfiguration.Encoding).toBe('H264');
+    });
+
+    it('main_stream profile has correct resolution', () => {
+        const res     = handler({});
+        const main    = res.Profiles.find(p => p.attributes.token === 'main_stream');
+        const { Width, Height } = main.VideoEncoderConfiguration.Resolution;
+        expect(Width).toBe(1920);
+        expect(Height).toBe(1080);
+    });
+});
+
+describe('GetVideoSources', () => {
+    const server  = makeServer();
+    const handler = server.onvif.MediaService.Media.GetVideoSources;
+
+    it('returns VideoSources array', () => {
+        const res = handler({});
+        expect(Array.isArray(res.VideoSources)).toBe(true);
+    });
+
+    it('video source has Framerate', () => {
+        const res = handler({});
+        expect(res.VideoSources[0].Framerate).toBeGreaterThan(0);
+    });
+
+    it('video source has Resolution with Width and Height', () => {
+        const res = handler({});
+        expect(res.VideoSources[0].Resolution.Width).toBe(1920);
+        expect(res.VideoSources[0].Resolution.Height).toBe(1080);
+    });
+});
+
+describe('GetStreamUri', () => {
+    const server  = makeServer();
+    const handler = server.onvif.MediaService.Media.GetStreamUri;
+
+    it('returns MediaUri object', () => {
+        const res = handler({ ProfileToken: 'main_stream' });
+        expect(res.MediaUri).toBeDefined();
+    });
+
+    it('URI starts with rtsp://', () => {
+        const res = handler({ ProfileToken: 'main_stream' });
+        expect(res.MediaUri.Uri).toMatch(/^rtsp:\/\//);
+    });
+
+    it('main_stream uses highQuality rtsp path', () => {
+        const res = handler({ ProfileToken: 'main_stream' });
+        expect(res.MediaUri.Uri).toContain('/profile5/media.smp');
+    });
+
+    it('sub_stream uses lowQuality rtsp path', () => {
+        const res = handler({ ProfileToken: 'sub_stream' });
+        expect(res.MediaUri.Uri).toContain('/profile1/media.smp');
+    });
+
+    it('URI contains the server hostname and rtsp port', () => {
+        const res = handler({ ProfileToken: 'main_stream' });
+        expect(res.MediaUri.Uri).toContain('192.168.1.100');
+        expect(res.MediaUri.Uri).toContain('8554');
+    });
+
+    it('has Timeout field', () => {
+        const res = handler({ ProfileToken: 'main_stream' });
+        expect(res.MediaUri.Timeout).toBeDefined();
+    });
+});
+
+describe('GetSnapshotUri', () => {
+    const server  = makeServer();
+    const handler = server.onvif.MediaService.Media.GetSnapshotUri;
+
+    it('returns MediaUri object', () => {
+        const res = handler({ ProfileToken: 'main_stream' });
+        expect(res.MediaUri).toBeDefined();
+    });
+
+    it('URI starts with http://', () => {
+        const res = handler({ ProfileToken: 'main_stream' });
+        expect(res.MediaUri.Uri).toMatch(/^http:\/\//);
+    });
+
+    it('has Timeout field', () => {
+        const res = handler({ ProfileToken: 'main_stream' });
+        expect(res.MediaUri.Timeout).toBeDefined();
+    });
+});
+
+describe('Audio handlers (no audio config)', () => {
+    const server = makeServer();
+
+    it('GetAudioSources returns empty array when audio not configured', () => {
+        const res = server.onvif.MediaService.Media.GetAudioSources({});
+        expect(res.AudioSources).toEqual([]);
+    });
+
+    it('GetAudioEncoderConfigurations returns empty array when audio not configured', () => {
+        const res = server.onvif.MediaService.Media.GetAudioEncoderConfigurations({});
+        expect(res.Configurations).toEqual([]);
+    });
+});
+
+describe('Audio handlers (audio: true)', () => {
+    const server = makeServer({ audio: true });
+
+    it('GetAudioSources returns one source', () => {
+        const res = server.onvif.MediaService.Media.GetAudioSources({});
+        expect(res.AudioSources.length).toBe(1);
+    });
+
+    it('GetAudioEncoderConfigurations returns AAC config', () => {
+        const res = server.onvif.MediaService.Media.GetAudioEncoderConfigurations({});
+        expect(res.Configurations[0].Encoding).toBe('AAC');
+    });
+
+    it('profiles include AudioSourceConfiguration', () => {
+        const profiles = server.onvif.MediaService.Media.GetProfiles({}).Profiles;
+        expect(profiles[0].AudioSourceConfiguration).toBeDefined();
+    });
+});
+
+describe('Discovery response XML', () => {
+    const server = makeServer();
+
+    it('produces valid XML string', () => {
+        const xml = server._buildDiscoveryResponse('urn:uuid:test-probe-id', 0);
+        expect(typeof xml).toBe('string');
+        expect(xml).toContain('<?xml');
+        expect(xml).toContain('ProbeMatches');
+    });
+
+    it('contains correct uuid', () => {
+        const xml = server._buildDiscoveryResponse('urn:uuid:test', 0);
+        expect(xml).toContain('aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee');
+    });
+
+    it('contains NetworkVideoTransmitter type', () => {
+        const xml = server._buildDiscoveryResponse('urn:uuid:test', 0);
+        expect(xml).toContain('NetworkVideoTransmitter');
+    });
+
+    it('contains correct XAddrs', () => {
+        const xml = server._buildDiscoveryResponse('urn:uuid:test', 0);
+        expect(xml).toContain('192.168.1.100:8081');
+    });
+
+    it('RelatesTo echoes the probe UUID', () => {
+        const xml = server._buildDiscoveryResponse('urn:uuid:my-probe', 0);
+        expect(xml).toContain('urn:uuid:my-probe');
+    });
+
+    it('has correct SOAP 1.2 envelope namespace', () => {
+        const xml = server._buildDiscoveryResponse('urn:uuid:test', 0);
+        expect(xml).toContain('http://www.w3.org/2003/05/soap-envelope');
+    });
+
+    it('includes camera name in scopes', () => {
+        const xml = server._buildDiscoveryResponse('urn:uuid:test', 0);
+        expect(xml).toContain('TestCamera');
+    });
+
+    it('increments MessageNumber', () => {
+        const xml0 = server._buildDiscoveryResponse('probe', 0);
+        const xml5 = server._buildDiscoveryResponse('probe', 5);
+        expect(xml0).toContain('MessageNumber="0"');
+        expect(xml5).toContain('MessageNumber="5"');
+    });
+});

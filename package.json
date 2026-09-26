@@ -1,12 +1,18 @@
 {
-  "name": "onvif-proxy",
-  "version": "1.0.0",
-  "description": "Onvif Proxy",
+  "name": "onvif-server-samsung",
+  "version": "2.0.0",
+  "description": "Virtual ONVIF Server for Samsung legacy cameras — compatible with Dahua XVR strict ONVIF clients",
   "main": "main.js",
   "license": "MIT",
   "author": {
     "name": "Daniela Hasenbring",
     "email": "daniela@koshigaya.de"
+  },
+  "scripts": {
+    "start": "node main.js",
+    "test": "jest --testEnvironment=node --forceExit",
+    "test:watch": "jest --testEnvironment=node --watch",
+    "test:verbose": "jest --testEnvironment=node --verbose --forceExit"
   },
   "dependencies": {
     "soap": "1.1.5",
@@ -16,5 +22,11 @@
     "argparse": "2.0.1",
     "yaml": "2.5.1",
     "simple-node-logger-se": "^21.8.19"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  },
+  "jest": {
+    "testMatch": ["**/test/**/*.test.js"]
   }
 }

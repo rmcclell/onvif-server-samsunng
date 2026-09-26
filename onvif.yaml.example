@@ -1,0 +1,81 @@
+# onvif-server-samsung — example config
+# Samsung SNH-V6414N connected through Dahua XVR16CH-2AI
+#
+# IMPORTANT: Replace all placeholder values before use.
+# Do NOT commit credentials to version control.
+
+onvif:
+  - # ── Identity ───────────────────────────────────────────────────────────
+    # The IP of the machine running this server (Windows PC, Pi, etc.)
+    # On Windows you don't need a MAC address — set hostname directly.
+    hostname: 192.168.1.100      # <-- IP of the machine running onvif-server
+    # mac: a2:a2:a2:a2:a2:a1   # optional: only needed for Linux macvlan setups
+
+    ports:
+      server:   8081             # ONVIF HTTP service port (one per camera)
+      rtsp:     8554             # local RTSP passthrough port
+      snapshot: 8580             # local snapshot passthrough port
+
+    name: SamsungCamera1         # friendly name (no spaces)
+    uuid: 00000000-0000-0000-0000-000000000001  # generate with: node -e "require('node-uuid').v4()"
+
+    # ── Device identity presented to the Dahua XVR ─────────────────────────
+    deviceInfo:
+      manufacturer:    Samsung
+      model:           SNH-V6414N
+      firmwareVersion: "2.10.00_b43"
+      serialNumber:    SNH-V6414N-0001
+      hardwareId:      SNH-V6414N-1001
+
+    # ── Stream quality settings ─────────────────────────────────────────────
+    # Samsung SNH-V6414N RTSP paths (try profile1, profile2, or profile5)
+    highQuality:
+      rtsp:      /profile5/media.smp   # main HD stream path on the camera
+      snapshot:  /onvif/snapshot       # snapshot path (if supported)
+      width:     1920
+      height:    1080
+      framerate: 15
+      bitrate:   2048
+      quality:   4
+
+    lowQuality:
+      rtsp:      /profile1/media.smp   # sub-stream path
+      snapshot:  /onvif/snapshot
+      width:     640
+      height:    360
+      framerate: 15
+      bitrate:   512
+      quality:   1
+
+    # ── Audio (optional) ───────────────────────────────────────────────────
+    # Uncomment if your Samsung camera has a microphone and the Dahua XVR
+    # should record audio. Audio bytes already flow through the RTSP proxy.
+    # audio: true
+    # audio:
+    #   encoding: AAC
+    #   bitrate: 64
+    #   samplerate: 16
+
+    # ── Target (the real Samsung camera) ──────────────────────────────────
+    target:
+      hostname: 192.168.1.200    # <-- actual IP of the Samsung camera
+      ports:
+        rtsp:     554            # standard RTSP port
+        snapshot: 80             # HTTP port for snapshots
+
+    # ── PTZ passthrough (optional) ─────────────────────────────────────────
+    # Only needed if the real camera supports PTZ pan/tilt/zoom
+    # ptz:
+    #   port: 8080               # ONVIF port on the real camera
+    #   username: admin
+    #   password: 4321
+
+  # ── Add additional cameras below ────────────────────────────────────────
+  # - hostname: 192.168.1.100
+  #   ports:
+  #     server:   8082
+  #     rtsp:     8555
+  #     snapshot: 8581
+  #   name: SamsungCamera2
+  #   uuid: 00000000-0000-0000-0000-000000000002
+  #   ...
