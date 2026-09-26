@@ -461,12 +461,68 @@ class OnvifServer {
                 return { VideoSources: [ this.videoSource ] };
             },
 
+            GetGuaranteedNumberOfVideoChannels: (_args) => {
+                return {
+                    NumOfVideoChannels: 1
+                };
+            },
+
             GetVideoSourceConfigurations: (_args) => {
                 return { Configurations: this.profiles.map(p => p.VideoSourceConfiguration) };
             },
 
+            GetVideoSourceConfiguration: (args) => {
+                const token = args && args.ConfigurationToken;
+                const config = this.profiles.map(p => p.VideoSourceConfiguration).find(c => c.attributes.token === token);
+                return { Configuration: config || this.profiles[0].VideoSourceConfiguration };
+            },
+
+            GetVideoSourceConfigurationOptions: (_args) => {
+                return {
+                    Options: {
+                        BoundsRange: {
+                            XRange:      { Min: 0, Max: 0 },
+                            YRange:      { Min: 0, Max: 0 },
+                            WidthRange:  { Min: 640, Max: this.config.highQuality.width },
+                            HeightRange: { Min: 360, Max: this.config.highQuality.height }
+                        },
+                        VideoSourceTokensAvailable: ['video_src_token'],
+                        Extension: {}
+                    }
+                };
+            },
+
             GetVideoEncoderConfigurations: (_args) => {
                 return { Configurations: this.profiles.map(p => p.VideoEncoderConfiguration) };
+            },
+
+            GetVideoEncoderConfiguration: (args) => {
+                const token = args && args.ConfigurationToken;
+                const config = this.profiles.map(p => p.VideoEncoderConfiguration).find(c => c.attributes.token === token);
+                return { Configuration: config || this.profiles[0].VideoEncoderConfiguration };
+            },
+
+            GetVideoEncoderConfigurationOptions: (_args) => {
+                return {
+                    Options: {
+                        QualityRange: {
+                            Min: 1,
+                            Max: 6
+                        },
+                        H264: {
+                            ResolutionsAvailable: [
+                                { Width: 1920, Height: 1080 },
+                                { Width: 1280, Height: 720 },
+                                { Width: 640,  Height: 360 }
+                            ],
+                            GovLengthRange: { Min: 1, Max: 60 },
+                            FrameRateRange: { Min: 1, Max: 30 },
+                            EncodingIntervalRange: { Min: 1, Max: 1 },
+                            H264ProfilesSupported: ['Main', 'High', 'Baseline']
+                        },
+                        Extension: {}
+                    }
+                };
             },
 
             // --- Audio (PR #28) ---
