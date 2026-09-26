@@ -161,7 +161,7 @@ class OnvifServer {
     _buildProfile(name, token, encoderToken, quality) {
         return {
             Name:       name,
-            attributes: { token },
+            attributes: { token, fixed: 'true' },
             VideoSourceConfiguration: {
                 Name:     'VideoSource',
                 UseCount: 2,
@@ -190,6 +190,15 @@ class OnvifServer {
                 H264: {
                     GovLength:   quality.framerate,
                     H264Profile: 'Main'
+                },
+                Multicast: {
+                    Address: {
+                        Type: 'IPv4',
+                        IPv4Address: '0.0.0.0'
+                    },
+                    Port: 0,
+                    TTL: 1,
+                    AutoStart: false
                 },
                 SessionTimeout: 'PT1000S'
             }
@@ -495,10 +504,21 @@ class OnvifServer {
                 const profileToken = args && args.ProfileToken;
                 let uri = `http://${this.config.hostname}:${this.config.ports.server}/snapshot.png`;
 
+                const extractCleanPath = (p) => {
+                    if (!p) return '';
+                    if (p.includes('://')) {
+                        try { return new URL(p).pathname; } catch (_) {
+                            const idx = p.indexOf('/', p.indexOf('//') + 2);
+                            return idx > -1 ? p.substring(idx) : p;
+                        }
+                    }
+                    return p.startsWith('/') ? p : '/' + p;
+                };
+
                 if (profileToken === 'sub_stream' && this.config.lowQuality && this.config.lowQuality.snapshot) {
-                    uri = `http://${this.config.hostname}:${this.config.ports.snapshot}${this.config.lowQuality.snapshot}`;
+                    uri = `http://${this.config.hostname}:${this.config.ports.snapshot}${extractCleanPath(this.config.lowQuality.snapshot)}`;
                 } else if (this.config.highQuality && this.config.highQuality.snapshot) {
-                    uri = `http://${this.config.hostname}:${this.config.ports.snapshot}${this.config.highQuality.snapshot}`;
+                    uri = `http://${this.config.hostname}:${this.config.ports.snapshot}${extractCleanPath(this.config.highQuality.snapshot)}`;
                 }
 
                 return {
@@ -513,14 +533,27 @@ class OnvifServer {
 
             GetStreamUri: (args) => {
                 const profileToken = args && args.ProfileToken;
-                let path = this.config.highQuality.rtsp;
+                let rawPath = this.config.highQuality.rtsp;
                 if (profileToken === 'sub_stream' && this.config.lowQuality) {
-                    path = this.config.lowQuality.rtsp;
+                    rawPath = this.config.lowQuality.rtsp;
+                }
+
+                let cleanPath = rawPath || '';
+                if (cleanPath.includes('://')) {
+                    try {
+                        cleanPath = new URL(cleanPath).pathname;
+                    } catch (_) {
+                        const idx = cleanPath.indexOf('/', cleanPath.indexOf('//') + 2);
+                        cleanPath = idx > -1 ? cleanPath.substring(idx) : cleanPath;
+                    }
+                }
+                if (cleanPath && !cleanPath.startsWith('/')) {
+                    cleanPath = '/' + cleanPath;
                 }
 
                 return {
                     MediaUri: {
-                        Uri: `rtsp://${this.config.hostname}:${this.config.ports.rtsp}${path}`,
+                        Uri: `rtsp://${this.config.hostname}:${this.config.ports.rtsp}${cleanPath}`,
                         InvalidAfterConnect: false,
                         InvalidAfterReboot:  false,
                         Timeout:             'PT30S'
