@@ -435,6 +435,40 @@ class OnvifServer {
                 return { NTPInformation: { FromDHCP: true } };
             },
 
+            GetHostname: (_args) => {
+                return {
+                    HostnameInformation: {
+                        FromDHCP: true,
+                        Name:     (this.config.name || 'Camera').replace(/\s+/g, '')
+                    }
+                };
+            },
+
+            GetNetworkProtocols: (_args) => {
+                return {
+                    NetworkProtocols: [
+                        { Name: 'HTTP', Enabled: true, Port: this.config.ports.server },
+                        { Name: 'RTSP', Enabled: true, Port: this.config.ports.rtsp }
+                    ]
+                };
+            },
+
+            GetDiscoveryMode: (_args) => {
+                return { DiscoveryMode: 'Discoverable' };
+            },
+
+            GetRelayOutputs: (_args) => {
+                return { RelayOutputs: [] };
+            },
+
+            GetDynamicDNS: (_args) => {
+                return { DynamicDNSInformation: { Type: 'NoUpdate' } };
+            },
+
+            GetWsdlUrl: (_args) => {
+                return { WsdlUrl: 'http://www.onvif.org/onvif/ver10/device/wsdl/devicemgmt.wsdl' };
+            },
+
             // Stub reboot — respond success, do nothing
             SystemReboot: (_args) => {
                 return { Message: 'Rebooting' };
@@ -554,6 +588,42 @@ class OnvifServer {
                         }]
                     }
                 };
+            },
+
+            GetCompatibleVideoEncoderConfigurations: (_args) => {
+                return { Configurations: this.profiles.map(p => p.VideoEncoderConfiguration) };
+            },
+
+            GetCompatibleVideoSourceConfigurations: (_args) => {
+                return { Configurations: this.profiles.map(p => p.VideoSourceConfiguration) };
+            },
+
+            GetCompatibleAudioEncoderConfigurations: (_args) => {
+                return { Configurations: this.audioConfig ? [ this.audioEncoderConfiguration ] : [] };
+            },
+
+            GetCompatibleAudioSourceConfigurations: (_args) => {
+                return { Configurations: this.audioConfig ? [ this.audioSourceConfiguration ] : [] };
+            },
+
+            GetVideoAnalyticsConfigurations: (_args) => {
+                return { Configurations: [] };
+            },
+
+            GetMetadataConfigurations: (_args) => {
+                return { Configurations: [] };
+            },
+
+            GetMetadataConfigurationOptions: (_args) => {
+                return { Options: {} };
+            },
+
+            GetAudioOutputs: (_args) => {
+                return { AudioOutputs: [] };
+            },
+
+            GetAudioOutputConfigurations: (_args) => {
+                return { Configurations: [] };
             },
 
             GetSnapshotUri: (args) => {
