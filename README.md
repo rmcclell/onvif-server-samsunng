@@ -197,13 +197,13 @@ The Dahua XVR should discover the camera automatically within a few seconds via 
 docker run --rm -it \
   --network host \
   -v /path/to/your/onvif.yaml:/onvif.yaml \
-  ghcr.io/your-fork/onvif-server-samsung:latest
+  ghcr.io/rmcclell/onvif-server-samsunng:latest
 
 # Generate a config from inside the container
 docker run --rm -it \
   --network host \
   --entrypoint /bin/sh \
-  ghcr.io/your-fork/onvif-server-samsung:latest
+  ghcr.io/rmcclell/onvif-server-samsunng:latest
 # then: node main.js --create-config
 ```
 
