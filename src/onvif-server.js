@@ -48,6 +48,53 @@ function getIpAddressFromMac(macAddress) {
 }
 
 // ---------------------------------------------------------------------------
+// ONVIF XML Namespace Normalization
+// Ensures payload elements use standard tt: (http://www.onvif.org/ver10/schema)
+// so strict ONVIF parsers (Dahua, Hikvision, etc.) can deserialize profiles.
+// ---------------------------------------------------------------------------
+const ROOT_SOAP_RESPONSES = new Set([
+    'GetProfilesResponse', 'GetProfileResponse', 'GetVideoSourcesResponse', 'GetVideoSourceConfigurationsResponse',
+    'GetVideoSourceConfigurationResponse', 'GetVideoSourceConfigurationOptionsResponse', 'GetVideoEncoderConfigurationsResponse',
+    'GetVideoEncoderConfigurationResponse', 'GetVideoEncoderConfigurationOptionsResponse', 'GetGuaranteedNumberOfVideoChannelsResponse',
+    'GetAudioSourcesResponse', 'GetAudioSourceConfigurationsResponse', 'GetAudioEncoderConfigurationsResponse',
+    'GetAudioEncoderConfigurationResponse', 'GetAudioEncoderConfigurationOptionsResponse', 'GetCompatibleVideoEncoderConfigurationsResponse',
+    'GetCompatibleVideoSourceConfigurationsResponse', 'GetCompatibleAudioEncoderConfigurationsResponse', 'GetCompatibleAudioSourceConfigurationsResponse',
+    'GetVideoAnalyticsConfigurationsResponse', 'GetMetadataConfigurationsResponse', 'GetMetadataConfigurationOptionsResponse',
+    'GetAudioOutputsResponse', 'GetAudioOutputConfigurationsResponse', 'GetSnapshotUriResponse', 'GetStreamUriResponse',
+    'GetCapabilitiesResponse', 'GetServiceCapabilitiesResponse', 'GetServicesResponse', 'GetDeviceInformationResponse',
+    'GetNetworkInterfacesResponse', 'GetUsersResponse', 'GetScopesResponse', 'GetNetworkDefaultGatewayResponse',
+    'GetDNSResponse', 'GetNTPResponse', 'GetHostnameResponse', 'GetNetworkProtocolsResponse', 'GetDiscoveryModeResponse',
+    'GetRelayOutputsResponse', 'GetDynamicDNSResponse', 'GetWsdlUrlResponse', 'SystemRebootResponse',
+    'GetSystemDateAndTimeResponse', 'SetSystemDateAndTimeResponse'
+]);
+
+function fixOnvifNamespaces(body) {
+    if (!body || (!body.includes('<soap:Envelope') && !body.includes(':Envelope'))) return body;
+
+    if (!body.includes('xmlns:tt=')) {
+        body = body.replace(
+            /(<[a-zA-Z0-9_]*:?Envelope[^>]*)(>)/i,
+            '$1 xmlns:tt="http://www.onvif.org/ver10/schema" xmlns:trt="http://www.onvif.org/ver10/media/wsdl" xmlns:tds="http://www.onvif.org/ver10/device/wsdl"$2'
+        );
+    }
+
+    return body.replace(/<(\/?)(?:trt|tds):([a-zA-Z0-9_]+)(?=[>\s/])/g, (match, slash, tag) => {
+        if (ROOT_SOAP_RESPONSES.has(tag)) {
+            const prefix = tag.startsWith('GetCapabilities') || tag.startsWith('GetServices') ||
+                           tag.startsWith('GetDevice') || tag.startsWith('GetNetwork') ||
+                           tag.startsWith('GetUsers') || tag.startsWith('GetScopes') ||
+                           tag.startsWith('GetDNS') || tag.startsWith('GetNTP') ||
+                           tag.startsWith('GetHostname') || tag.startsWith('GetDiscovery') ||
+                           tag.startsWith('GetRelay') || tag.startsWith('GetDynamic') ||
+                           tag.startsWith('GetWsdl') || tag.startsWith('System') ||
+                           tag.startsWith('SetSystem') || tag.startsWith('GetSystemDate') ? 'tds' : 'trt';
+            return `<${slash}${prefix}:${tag}`;
+        }
+        return `<${slash}tt:${tag}`;
+    });
+}
+
+// ---------------------------------------------------------------------------
 // Main class
 // ---------------------------------------------------------------------------
 class OnvifServer {
@@ -724,6 +771,11 @@ class OnvifServer {
             return;
         }
 
+        // Allow SOAP routes to be handled by soap.listen
+        if (pathname === '/onvif/device_service' || pathname === '/onvif/media_service') {
+            return;
+        }
+
         response.writeHead(404, { 'Content-Type': 'text/plain' });
         response.write('404 Not Found\n');
         response.end();
@@ -851,8 +903,32 @@ class OnvifServer {
     // Start HTTP + SOAP services
     // -------------------------------------------------------------------------
     startServer() {
-        // PR #26: bind this, add error handler
-        this.server = http.createServer(this._handleRequest.bind(this));
+        this.server = http.createServer((request, response) => {
+            const origWrite = response.write;
+            const origEnd   = response.end;
+            const chunks    = [];
+
+            response.write = function(chunk, encoding, callback) {
+                if (chunk) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding));
+                if (typeof callback === 'function') callback();
+                return true;
+            };
+
+            response.end = function(chunk, encoding, callback) {
+                if (chunk) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding));
+                let body = Buffer.concat(chunks).toString('utf8');
+                body = fixOnvifNamespaces(body);
+
+                try {
+                    response.setHeader('Content-Length', Buffer.byteLength(body));
+                } catch (_) {}
+
+                return origEnd.call(this, body, 'utf8', callback);
+            };
+
+            this._handleRequest(request, response);
+        });
+
         this.server.on('error', err => {
             this.logger.error(`HTTP server error: ${err.message}`);
         });
