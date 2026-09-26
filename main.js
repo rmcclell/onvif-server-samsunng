@@ -144,6 +144,15 @@ if (args.create_config) {
         for (const srcPort in proxies[dest]) {
             logger.info(`Starting TCP proxy :${srcPort} → ${dest}:${proxies[dest][srcPort]} ...`);
             const proxy = tcpProxy.createProxy(srcPort, dest, proxies[dest][srcPort]);
+            if (args.debug && proxy && typeof proxy.on === 'function') {
+                proxy.on('connection', socket => {
+                    const client = socket.remoteAddress ? `${socket.remoteAddress}:${socket.remotePort}` : 'client';
+                    logger.debug(`TCP proxy :${srcPort} → ${dest}:${proxies[dest][srcPort]} | Client connected: ${client}`);
+                    socket.on('close', () => {
+                        logger.debug(`TCP proxy :${srcPort} → ${dest}:${proxies[dest][srcPort]} | Client disconnected: ${client}`);
+                    });
+                });
+            }
             proxyServers.push(proxy);
             logger.info('  Started!');
             logger.info('');

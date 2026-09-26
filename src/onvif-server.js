@@ -874,17 +874,39 @@ class OnvifServer {
     }
 
     // -------------------------------------------------------------------------
-    // Debug output (PR #26: guard duplicate listeners)
+    // Debug output (PR #26: guard duplicate listeners + verbose Auth logging)
     // -------------------------------------------------------------------------
+    _logSoapRequest(serviceName, rawXml, methodName) {
+        let authInfo = 'None / Anonymous';
+        if (typeof rawXml === 'string') {
+            const userMatch    = rawXml.match(/<[^:]*:?Username[^>]*>([^<]+)<\/[^:]*:?Username>/i);
+            const passMatch    = rawXml.match(/<[^:]*:?Password([^>]*)>([^<]*)<\/[^:]*:?Password>/i);
+            const createdMatch = rawXml.match(/<[^:]*:?Created[^>]*>([^<]+)<\/[^:]*:?Created>/i);
+            const nonceMatch   = rawXml.match(/<[^:]*:?Nonce[^>]*>([^<]+)<\/[^:]*:?Nonce>/i);
+
+            if (userMatch) {
+                const username = userMatch[1];
+                const typeAttr = passMatch && passMatch[1] ? (passMatch[1].match(/Type="([^"]+)"/i) || [])[1] : '';
+                const passType = typeAttr ? typeAttr.split('#').pop() : 'PasswordDigest';
+                const hasPass  = passMatch && passMatch[2] ? 'Yes' : 'No';
+                const created  = createdMatch ? createdMatch[1] : 'n/a';
+                const nonce    = nonceMatch ? `${nonceMatch[1].substring(0, 8)}...` : 'n/a';
+                authInfo = `WS-Security [User: "${username}", Type: ${passType}, Digest: ${hasPass}, Nonce: ${nonce}, Created: ${created}]`;
+            }
+        }
+        this.logger.debug(`${serviceName}: ${methodName.padEnd(35)} | ${authInfo}`);
+    }
+
     enableDebugOutput() {
+        this.debugLogging = true;
         if (this.debugListenersAdded) return;
         this.debugListenersAdded = true;
 
-        this.deviceService.on('request', (_req, methodName) => {
-            this.logger.debug(`DeviceService: ${methodName}`);
+        this.deviceService.on('request', (rawXml, methodName) => {
+            this._logSoapRequest('DeviceService', rawXml, methodName);
         });
-        this.mediaService.on('request', (_req, methodName) => {
-            this.logger.debug(`MediaService: ${methodName}`);
+        this.mediaService.on('request', (rawXml, methodName) => {
+            this._logSoapRequest('MediaService', rawXml, methodName);
         });
     }
 
