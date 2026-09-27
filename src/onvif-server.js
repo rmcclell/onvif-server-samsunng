@@ -87,7 +87,7 @@ function fixOnvifNamespaces(body) {
                            tag.startsWith('GetDNS') || tag.startsWith('GetNTP') ||
                            tag.startsWith('GetHostname') || tag.startsWith('GetDiscovery') ||
                            tag.startsWith('GetRelay') || tag.startsWith('GetDynamic') ||
-                           tag.startsWith('GetWsdl') || tag.startsWith('System') ||
+                           tag.startsWith('GetWsdl') || tag.startsWith('GetServiceCapabilities') || tag.startsWith('System') ||
                            tag.startsWith('SetSystem') || tag.startsWith('GetSystemDate') ? 'tds' : 'trt';
             return `<${slash}${prefix}:${tag}`;
         }
@@ -98,9 +98,11 @@ function fixOnvifNamespaces(body) {
 // ---------------------------------------------------------------------------
 // Main class
 // ---------------------------------------------------------------------------
-const DEVICE_WSDL_PATH = path.join(__dirname, '..', 'wsdl', 'ver10', 'device', 'wsdl', 'devicemgmt.wsdl');
-const MEDIA_WSDL_PATH  = path.join(__dirname, '..', 'wsdl', 'ver10', 'media', 'wsdl', 'media.wsdl');
+const DEVICE_WSDL_PATH = path.join(__dirname, '..', 'wsdl', 'device_service.wsdl');
+const MEDIA_WSDL_PATH  = path.join(__dirname, '..', 'wsdl', 'media_service.wsdl');
 const SNAPSHOT_PATH    = path.join(__dirname, '..', 'resources', 'snapshot.png');
+const DEVICE_WSDL_CLIENT_PATH = path.relative(process.cwd(), DEVICE_WSDL_PATH);
+const MEDIA_WSDL_CLIENT_PATH  = path.relative(process.cwd(), MEDIA_WSDL_PATH);
 
 class OnvifServer {
     constructor(config, logger) {
@@ -847,7 +849,7 @@ class OnvifServer {
         const soapOpts   = { forceSoap12Headers: true };
         const secOpts    = { hasNonce: true, passwordType: 'PasswordDigest' };
 
-        const mediaClient = await soap.createClientAsync(MEDIA_WSDL_PATH, soapOpts);
+        const mediaClient = await soap.createClientAsync(MEDIA_WSDL_CLIENT_PATH, soapOpts);
         mediaClient.setEndpoint(mediaEndpoint);
         mediaClient.setSecurity(new soap.WSSecurity(ptzConfig.username, ptzConfig.password, secOpts));
 
@@ -878,7 +880,7 @@ class OnvifServer {
         }
 
         // Discover real PTZ endpoint
-        const devClient = await soap.createClientAsync(DEVICE_WSDL_PATH, soapOpts);
+        const devClient = await soap.createClientAsync(DEVICE_WSDL_CLIENT_PATH, soapOpts);
         devClient.setEndpoint(endpoint);
         devClient.setSecurity(new soap.WSSecurity(ptzConfig.username, ptzConfig.password, secOpts));
 
@@ -903,6 +905,12 @@ class OnvifServer {
         };
 
         return this.realPtzProfileToken;
+    }
+
+    _loadWsdl(wsdlPath, servicePath) {
+        const serviceUrl = `http://${this.config.hostname}:${this.config.ports.server}${servicePath}`;
+        return fs.readFileSync(wsdlPath, 'utf8')
+            .replace(/(<soap12:address location=")[^"]+(")/, `$1${serviceUrl}$2`);
     }
 
     // -------------------------------------------------------------------------
@@ -943,14 +951,14 @@ class OnvifServer {
         this.deviceService = soap.listen(this.server, {
             path:             '/onvif/device_service',
             services:         this.onvif,
-            xml:              fs.readFileSync(DEVICE_WSDL_PATH, 'utf8'),
+            xml:              this._loadWsdl(DEVICE_WSDL_PATH, '/onvif/device_service'),
             forceSoap12Headers: true
         });
 
         this.mediaService = soap.listen(this.server, {
             path:             '/onvif/media_service',
             services:         this.onvif,
-            xml:              fs.readFileSync(MEDIA_WSDL_PATH, 'utf8'),
+            xml:              this._loadWsdl(MEDIA_WSDL_PATH, '/onvif/media_service'),
             forceSoap12Headers: true
         });
     }

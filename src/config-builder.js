@@ -4,7 +4,8 @@ const soap = require('soap');
 const uuid = require('node-uuid');
 const path = require('path');
 
-const MEDIA_WSDL_PATH = path.join(__dirname, '..', 'wsdl', 'ver10', 'media', 'wsdl', 'media.wsdl');
+const MEDIA_WSDL_PATH = path.join(__dirname, '..', 'wsdl', 'media_service.wsdl');
+const MEDIA_WSDL_CLIENT_PATH = path.relative(process.cwd(), MEDIA_WSDL_PATH);
 
 function extractPath(fullUrl) {
     try {
@@ -21,7 +22,7 @@ async function createConfig(hostname, username, password) {
     const options = { forceSoap12Headers: true };
     const securityOptions = { hasNonce: true, passwordType: 'PasswordDigest' };
 
-    const client = await soap.createClientAsync(MEDIA_WSDL_PATH, options);
+    const client = await soap.createClientAsync(MEDIA_WSDL_CLIENT_PATH, options);
 
     // PR #26: wrap in try/finally to destroy HTTP agent
     try {

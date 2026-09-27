@@ -1,9 +1,212 @@
-﻿<?xml version="1.0" encoding="utf-8" ?>
-<wsdl:definitions xmlns:s="http://www.w3.org/2001/XMLSchema" xmlns:i0="http://www.onvif.org/ver10/device/wsdl" xmlns:soap12="http://schemas.xmlsoap.org/wsdl/soap12/" xmlns:http="http://schemas.xmlsoap.org/wsdl/http/" xmlns:mime="http://schemas.xmlsoap.org/wsdl/mime/" xmlns:tns="http://tempuri.org/" xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/" xmlns:tm="http://microsoft.com/wsdl/mime/textMatching/" xmlns:soapenc="http://schemas.xmlsoap.org/soap/encoding/" xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/" targetNamespace="http://tempuri.org/">
-  <wsdl:import namespace="http://www.onvif.org/ver10/device/wsdl" location="https://www.onvif.org/ver10/device/wsdl/devicemgmt.wsdl"/>
+<?xml version="1.0" encoding="UTF-8"?>
+<wsdl:definitions
+  xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+  xmlns:soap12="http://schemas.xmlsoap.org/wsdl/soap12/"
+  xmlns:xs="http://www.w3.org/2001/XMLSchema"
+  xmlns:tns="http://www.onvif.org/ver10/device/wsdl"
+  targetNamespace="http://www.onvif.org/ver10/device/wsdl">
+  <wsdl:types>
+    <xs:schema targetNamespace="http://www.onvif.org/ver10/device/wsdl" elementFormDefault="qualified">
+      <xs:element name="GetSystemDateAndTime"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="GetSystemDateAndTimeResponse"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="SetSystemDateAndTime"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="SetSystemDateAndTimeResponse"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="GetCapabilities"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="GetCapabilitiesResponse"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="GetServices"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="GetServicesResponse"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="GetServiceCapabilities"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="GetServiceCapabilitiesResponse"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="GetDeviceInformation"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="GetDeviceInformationResponse"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="GetNetworkInterfaces"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="GetNetworkInterfacesResponse"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="GetUsers"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="GetUsersResponse"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="GetScopes"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="GetScopesResponse"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="GetNetworkDefaultGateway"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="GetNetworkDefaultGatewayResponse"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="GetDNS"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="GetDNSResponse"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="GetNTP"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="GetNTPResponse"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="GetHostname"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="GetHostnameResponse"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="GetNetworkProtocols"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="GetNetworkProtocolsResponse"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="GetDiscoveryMode"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="GetDiscoveryModeResponse"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="GetRelayOutputs"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="GetRelayOutputsResponse"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="GetDynamicDNS"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="GetDynamicDNSResponse"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="GetWsdlUrl"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="GetWsdlUrlResponse"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="SystemReboot"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="SystemRebootResponse"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+    </xs:schema>
+  </wsdl:types>
+  <wsdl:message name="GetSystemDateAndTimeRequest"><wsdl:part name="parameters" element="tns:GetSystemDateAndTime"/></wsdl:message>
+  <wsdl:message name="GetSystemDateAndTimeResponse"><wsdl:part name="parameters" element="tns:GetSystemDateAndTimeResponse"/></wsdl:message>
+  <wsdl:message name="SetSystemDateAndTimeRequest"><wsdl:part name="parameters" element="tns:SetSystemDateAndTime"/></wsdl:message>
+  <wsdl:message name="SetSystemDateAndTimeResponse"><wsdl:part name="parameters" element="tns:SetSystemDateAndTimeResponse"/></wsdl:message>
+  <wsdl:message name="GetCapabilitiesRequest"><wsdl:part name="parameters" element="tns:GetCapabilities"/></wsdl:message>
+  <wsdl:message name="GetCapabilitiesResponse"><wsdl:part name="parameters" element="tns:GetCapabilitiesResponse"/></wsdl:message>
+  <wsdl:message name="GetServicesRequest"><wsdl:part name="parameters" element="tns:GetServices"/></wsdl:message>
+  <wsdl:message name="GetServicesResponse"><wsdl:part name="parameters" element="tns:GetServicesResponse"/></wsdl:message>
+  <wsdl:message name="GetServiceCapabilitiesRequest"><wsdl:part name="parameters" element="tns:GetServiceCapabilities"/></wsdl:message>
+  <wsdl:message name="GetServiceCapabilitiesResponse"><wsdl:part name="parameters" element="tns:GetServiceCapabilitiesResponse"/></wsdl:message>
+  <wsdl:message name="GetDeviceInformationRequest"><wsdl:part name="parameters" element="tns:GetDeviceInformation"/></wsdl:message>
+  <wsdl:message name="GetDeviceInformationResponse"><wsdl:part name="parameters" element="tns:GetDeviceInformationResponse"/></wsdl:message>
+  <wsdl:message name="GetNetworkInterfacesRequest"><wsdl:part name="parameters" element="tns:GetNetworkInterfaces"/></wsdl:message>
+  <wsdl:message name="GetNetworkInterfacesResponse"><wsdl:part name="parameters" element="tns:GetNetworkInterfacesResponse"/></wsdl:message>
+  <wsdl:message name="GetUsersRequest"><wsdl:part name="parameters" element="tns:GetUsers"/></wsdl:message>
+  <wsdl:message name="GetUsersResponse"><wsdl:part name="parameters" element="tns:GetUsersResponse"/></wsdl:message>
+  <wsdl:message name="GetScopesRequest"><wsdl:part name="parameters" element="tns:GetScopes"/></wsdl:message>
+  <wsdl:message name="GetScopesResponse"><wsdl:part name="parameters" element="tns:GetScopesResponse"/></wsdl:message>
+  <wsdl:message name="GetNetworkDefaultGatewayRequest"><wsdl:part name="parameters" element="tns:GetNetworkDefaultGateway"/></wsdl:message>
+  <wsdl:message name="GetNetworkDefaultGatewayResponse"><wsdl:part name="parameters" element="tns:GetNetworkDefaultGatewayResponse"/></wsdl:message>
+  <wsdl:message name="GetDNSRequest"><wsdl:part name="parameters" element="tns:GetDNS"/></wsdl:message>
+  <wsdl:message name="GetDNSResponse"><wsdl:part name="parameters" element="tns:GetDNSResponse"/></wsdl:message>
+  <wsdl:message name="GetNTPRequest"><wsdl:part name="parameters" element="tns:GetNTP"/></wsdl:message>
+  <wsdl:message name="GetNTPResponse"><wsdl:part name="parameters" element="tns:GetNTPResponse"/></wsdl:message>
+  <wsdl:message name="GetHostnameRequest"><wsdl:part name="parameters" element="tns:GetHostname"/></wsdl:message>
+  <wsdl:message name="GetHostnameResponse"><wsdl:part name="parameters" element="tns:GetHostnameResponse"/></wsdl:message>
+  <wsdl:message name="GetNetworkProtocolsRequest"><wsdl:part name="parameters" element="tns:GetNetworkProtocols"/></wsdl:message>
+  <wsdl:message name="GetNetworkProtocolsResponse"><wsdl:part name="parameters" element="tns:GetNetworkProtocolsResponse"/></wsdl:message>
+  <wsdl:message name="GetDiscoveryModeRequest"><wsdl:part name="parameters" element="tns:GetDiscoveryMode"/></wsdl:message>
+  <wsdl:message name="GetDiscoveryModeResponse"><wsdl:part name="parameters" element="tns:GetDiscoveryModeResponse"/></wsdl:message>
+  <wsdl:message name="GetRelayOutputsRequest"><wsdl:part name="parameters" element="tns:GetRelayOutputs"/></wsdl:message>
+  <wsdl:message name="GetRelayOutputsResponse"><wsdl:part name="parameters" element="tns:GetRelayOutputsResponse"/></wsdl:message>
+  <wsdl:message name="GetDynamicDNSRequest"><wsdl:part name="parameters" element="tns:GetDynamicDNS"/></wsdl:message>
+  <wsdl:message name="GetDynamicDNSResponse"><wsdl:part name="parameters" element="tns:GetDynamicDNSResponse"/></wsdl:message>
+  <wsdl:message name="GetWsdlUrlRequest"><wsdl:part name="parameters" element="tns:GetWsdlUrl"/></wsdl:message>
+  <wsdl:message name="GetWsdlUrlResponse"><wsdl:part name="parameters" element="tns:GetWsdlUrlResponse"/></wsdl:message>
+  <wsdl:message name="SystemRebootRequest"><wsdl:part name="parameters" element="tns:SystemReboot"/></wsdl:message>
+  <wsdl:message name="SystemRebootResponse"><wsdl:part name="parameters" element="tns:SystemRebootResponse"/></wsdl:message>
+  <wsdl:portType name="Device">
+    <wsdl:operation name="GetSystemDateAndTime"><wsdl:input message="tns:GetSystemDateAndTimeRequest"/><wsdl:output message="tns:GetSystemDateAndTimeResponse"/></wsdl:operation>
+    <wsdl:operation name="SetSystemDateAndTime"><wsdl:input message="tns:SetSystemDateAndTimeRequest"/><wsdl:output message="tns:SetSystemDateAndTimeResponse"/></wsdl:operation>
+    <wsdl:operation name="GetCapabilities"><wsdl:input message="tns:GetCapabilitiesRequest"/><wsdl:output message="tns:GetCapabilitiesResponse"/></wsdl:operation>
+    <wsdl:operation name="GetServices"><wsdl:input message="tns:GetServicesRequest"/><wsdl:output message="tns:GetServicesResponse"/></wsdl:operation>
+    <wsdl:operation name="GetServiceCapabilities"><wsdl:input message="tns:GetServiceCapabilitiesRequest"/><wsdl:output message="tns:GetServiceCapabilitiesResponse"/></wsdl:operation>
+    <wsdl:operation name="GetDeviceInformation"><wsdl:input message="tns:GetDeviceInformationRequest"/><wsdl:output message="tns:GetDeviceInformationResponse"/></wsdl:operation>
+    <wsdl:operation name="GetNetworkInterfaces"><wsdl:input message="tns:GetNetworkInterfacesRequest"/><wsdl:output message="tns:GetNetworkInterfacesResponse"/></wsdl:operation>
+    <wsdl:operation name="GetUsers"><wsdl:input message="tns:GetUsersRequest"/><wsdl:output message="tns:GetUsersResponse"/></wsdl:operation>
+    <wsdl:operation name="GetScopes"><wsdl:input message="tns:GetScopesRequest"/><wsdl:output message="tns:GetScopesResponse"/></wsdl:operation>
+    <wsdl:operation name="GetNetworkDefaultGateway"><wsdl:input message="tns:GetNetworkDefaultGatewayRequest"/><wsdl:output message="tns:GetNetworkDefaultGatewayResponse"/></wsdl:operation>
+    <wsdl:operation name="GetDNS"><wsdl:input message="tns:GetDNSRequest"/><wsdl:output message="tns:GetDNSResponse"/></wsdl:operation>
+    <wsdl:operation name="GetNTP"><wsdl:input message="tns:GetNTPRequest"/><wsdl:output message="tns:GetNTPResponse"/></wsdl:operation>
+    <wsdl:operation name="GetHostname"><wsdl:input message="tns:GetHostnameRequest"/><wsdl:output message="tns:GetHostnameResponse"/></wsdl:operation>
+    <wsdl:operation name="GetNetworkProtocols"><wsdl:input message="tns:GetNetworkProtocolsRequest"/><wsdl:output message="tns:GetNetworkProtocolsResponse"/></wsdl:operation>
+    <wsdl:operation name="GetDiscoveryMode"><wsdl:input message="tns:GetDiscoveryModeRequest"/><wsdl:output message="tns:GetDiscoveryModeResponse"/></wsdl:operation>
+    <wsdl:operation name="GetRelayOutputs"><wsdl:input message="tns:GetRelayOutputsRequest"/><wsdl:output message="tns:GetRelayOutputsResponse"/></wsdl:operation>
+    <wsdl:operation name="GetDynamicDNS"><wsdl:input message="tns:GetDynamicDNSRequest"/><wsdl:output message="tns:GetDynamicDNSResponse"/></wsdl:operation>
+    <wsdl:operation name="GetWsdlUrl"><wsdl:input message="tns:GetWsdlUrlRequest"/><wsdl:output message="tns:GetWsdlUrlResponse"/></wsdl:operation>
+    <wsdl:operation name="SystemReboot"><wsdl:input message="tns:SystemRebootRequest"/><wsdl:output message="tns:SystemRebootResponse"/></wsdl:operation>
+  </wsdl:portType>
+  <wsdl:binding name="DeviceBinding" type="tns:Device">
+    <soap12:binding transport="http://schemas.xmlsoap.org/soap/http" style="document"/>
+    <wsdl:operation name="GetSystemDateAndTime">
+      <soap12:operation soapAction="http://www.onvif.org/ver10/device/wsdl/GetSystemDateAndTime"/>
+      <wsdl:input><soap12:body use="literal"/></wsdl:input>
+      <wsdl:output><soap12:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="SetSystemDateAndTime">
+      <soap12:operation soapAction="http://www.onvif.org/ver10/device/wsdl/SetSystemDateAndTime"/>
+      <wsdl:input><soap12:body use="literal"/></wsdl:input>
+      <wsdl:output><soap12:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="GetCapabilities">
+      <soap12:operation soapAction="http://www.onvif.org/ver10/device/wsdl/GetCapabilities"/>
+      <wsdl:input><soap12:body use="literal"/></wsdl:input>
+      <wsdl:output><soap12:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="GetServices">
+      <soap12:operation soapAction="http://www.onvif.org/ver10/device/wsdl/GetServices"/>
+      <wsdl:input><soap12:body use="literal"/></wsdl:input>
+      <wsdl:output><soap12:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="GetServiceCapabilities">
+      <soap12:operation soapAction="http://www.onvif.org/ver10/device/wsdl/GetServiceCapabilities"/>
+      <wsdl:input><soap12:body use="literal"/></wsdl:input>
+      <wsdl:output><soap12:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="GetDeviceInformation">
+      <soap12:operation soapAction="http://www.onvif.org/ver10/device/wsdl/GetDeviceInformation"/>
+      <wsdl:input><soap12:body use="literal"/></wsdl:input>
+      <wsdl:output><soap12:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="GetNetworkInterfaces">
+      <soap12:operation soapAction="http://www.onvif.org/ver10/device/wsdl/GetNetworkInterfaces"/>
+      <wsdl:input><soap12:body use="literal"/></wsdl:input>
+      <wsdl:output><soap12:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="GetUsers">
+      <soap12:operation soapAction="http://www.onvif.org/ver10/device/wsdl/GetUsers"/>
+      <wsdl:input><soap12:body use="literal"/></wsdl:input>
+      <wsdl:output><soap12:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="GetScopes">
+      <soap12:operation soapAction="http://www.onvif.org/ver10/device/wsdl/GetScopes"/>
+      <wsdl:input><soap12:body use="literal"/></wsdl:input>
+      <wsdl:output><soap12:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="GetNetworkDefaultGateway">
+      <soap12:operation soapAction="http://www.onvif.org/ver10/device/wsdl/GetNetworkDefaultGateway"/>
+      <wsdl:input><soap12:body use="literal"/></wsdl:input>
+      <wsdl:output><soap12:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="GetDNS">
+      <soap12:operation soapAction="http://www.onvif.org/ver10/device/wsdl/GetDNS"/>
+      <wsdl:input><soap12:body use="literal"/></wsdl:input>
+      <wsdl:output><soap12:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="GetNTP">
+      <soap12:operation soapAction="http://www.onvif.org/ver10/device/wsdl/GetNTP"/>
+      <wsdl:input><soap12:body use="literal"/></wsdl:input>
+      <wsdl:output><soap12:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="GetHostname">
+      <soap12:operation soapAction="http://www.onvif.org/ver10/device/wsdl/GetHostname"/>
+      <wsdl:input><soap12:body use="literal"/></wsdl:input>
+      <wsdl:output><soap12:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="GetNetworkProtocols">
+      <soap12:operation soapAction="http://www.onvif.org/ver10/device/wsdl/GetNetworkProtocols"/>
+      <wsdl:input><soap12:body use="literal"/></wsdl:input>
+      <wsdl:output><soap12:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="GetDiscoveryMode">
+      <soap12:operation soapAction="http://www.onvif.org/ver10/device/wsdl/GetDiscoveryMode"/>
+      <wsdl:input><soap12:body use="literal"/></wsdl:input>
+      <wsdl:output><soap12:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="GetRelayOutputs">
+      <soap12:operation soapAction="http://www.onvif.org/ver10/device/wsdl/GetRelayOutputs"/>
+      <wsdl:input><soap12:body use="literal"/></wsdl:input>
+      <wsdl:output><soap12:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="GetDynamicDNS">
+      <soap12:operation soapAction="http://www.onvif.org/ver10/device/wsdl/GetDynamicDNS"/>
+      <wsdl:input><soap12:body use="literal"/></wsdl:input>
+      <wsdl:output><soap12:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="GetWsdlUrl">
+      <soap12:operation soapAction="http://www.onvif.org/ver10/device/wsdl/GetWsdlUrl"/>
+      <wsdl:input><soap12:body use="literal"/></wsdl:input>
+      <wsdl:output><soap12:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="SystemReboot">
+      <soap12:operation soapAction="http://www.onvif.org/ver10/device/wsdl/SystemReboot"/>
+      <wsdl:input><soap12:body use="literal"/></wsdl:input>
+      <wsdl:output><soap12:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+  </wsdl:binding>
   <wsdl:service name="DeviceService">
-    <wsdl:port name="Device" binding="i0:DeviceBinding">
-      <soap:address location="http://localhost:8000/onvif/device_service"/>
+    <wsdl:port name="Device" binding="tns:DeviceBinding">
+      <soap12:address location="http://localhost:8000/onvif/device_service"/>
     </wsdl:port>
   </wsdl:service>
 </wsdl:definitions>
