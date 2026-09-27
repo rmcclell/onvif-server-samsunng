@@ -1,4 +1,8 @@
 'use strict';
+
+const http = require('http');
+const path = require('path');
+const soap = require('soap');
 /**
  * ONVIF Compliance Tests
  *
@@ -9,6 +13,11 @@
  */
 
 const OnvifServerModule = require('../src/onvif-server');
+
+const DEVICE_WSDL_PATH = path.join(__dirname, '..', 'wsdl', 'device_service.wsdl');
+const MEDIA_WSDL_PATH  = path.join(__dirname, '..', 'wsdl', 'media_service.wsdl');
+const DEVICE_WSDL_CLIENT_PATH = path.relative(process.cwd(), DEVICE_WSDL_PATH);
+const MEDIA_WSDL_CLIENT_PATH  = path.relative(process.cwd(), MEDIA_WSDL_PATH);
 
 // ─── Mock logger ─────────────────────────────────────────────────────────────
 const noop   = () => {};
@@ -421,5 +430,76 @@ describe('Discovery response XML', () => {
         const xml5 = server._buildDiscoveryResponse('probe', 5);
         expect(xml0).toContain('MessageNumber="0"');
         expect(xml5).toContain('MessageNumber="5"');
+    });
+});
+
+describe('Live SOAP services', () => {
+    const server = makeServer({
+        hostname: '127.0.0.1',
+        ports: { server: 19081, rtsp: 19554, snapshot: 19580 }
+    });
+
+    beforeAll(() => {
+        server.startServer();
+    });
+
+    afterAll(async () => {
+        await server.shutdown();
+    });
+
+    it('serves GetSystemDateAndTime through the SOAP device endpoint', async () => {
+        const client = await soap.createClientAsync(DEVICE_WSDL_CLIENT_PATH, { forceSoap12Headers: true });
+
+        try {
+            client.setEndpoint('http://127.0.0.1:19081/onvif/device_service');
+            const [res] = await client.GetSystemDateAndTimeAsync({});
+            expect(res.SystemDateAndTime).toBeDefined();
+            expect(res.SystemDateAndTime.UTCDateTime).toBeDefined();
+        } finally {
+            if (client.httpClient && client.httpClient.agent && typeof client.httpClient.agent.destroy === 'function') {
+                client.httpClient.agent.destroy();
+            }
+        }
+    });
+
+    it('serves GetProfiles through the SOAP media endpoint', async () => {
+        const client = await soap.createClientAsync(MEDIA_WSDL_CLIENT_PATH, { forceSoap12Headers: true });
+
+        try {
+            client.setEndpoint('http://127.0.0.1:19081/onvif/media_service');
+            const [res] = await client.GetProfilesAsync({});
+            expect(Array.isArray(res.Profiles)).toBe(true);
+            expect(res.Profiles[0].attributes.token).toBe('main_stream');
+        } finally {
+            if (client.httpClient && client.httpClient.agent && typeof client.httpClient.agent.destroy === 'function') {
+                client.httpClient.agent.destroy();
+            }
+        }
+    });
+
+    it('serves WSDL with the active device endpoint address', async () => {
+        const wsdl = await new Promise((resolve, reject) => {
+            http.get('http://127.0.0.1:19081/onvif/device_service?wsdl', res => {
+                let data = '';
+                res.setEncoding('utf8');
+                res.on('data', chunk => { data += chunk; });
+                res.on('end', () => resolve(data));
+            }).on('error', reject);
+        });
+
+        expect(wsdl).toContain('http://127.0.0.1:19081/onvif/device_service');
+    });
+
+    it('serves WSDL with the active media endpoint address', async () => {
+        const wsdl = await new Promise((resolve, reject) => {
+            http.get('http://127.0.0.1:19081/onvif/media_service?wsdl', res => {
+                let data = '';
+                res.setEncoding('utf8');
+                res.on('data', chunk => { data += chunk; });
+                res.on('end', () => resolve(data));
+            }).on('error', reject);
+        });
+
+        expect(wsdl).toContain('http://127.0.0.1:19081/onvif/media_service');
     });
 });

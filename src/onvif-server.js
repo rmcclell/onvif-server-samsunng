@@ -7,6 +7,7 @@ const xml2js = require('xml2js');
 const uuid  = require('node-uuid');
 const fs    = require('fs');
 const os    = require('os');
+const path  = require('path');
 const { URL } = require('url');
 
 // ---------------------------------------------------------------------------
@@ -86,7 +87,7 @@ function fixOnvifNamespaces(body) {
                            tag.startsWith('GetDNS') || tag.startsWith('GetNTP') ||
                            tag.startsWith('GetHostname') || tag.startsWith('GetDiscovery') ||
                            tag.startsWith('GetRelay') || tag.startsWith('GetDynamic') ||
-                           tag.startsWith('GetWsdl') || tag.startsWith('System') ||
+                           tag.startsWith('GetWsdl') || tag.startsWith('GetServiceCapabilities') || tag.startsWith('System') ||
                            tag.startsWith('SetSystem') || tag.startsWith('GetSystemDate') ? 'tds' : 'trt';
             return `<${slash}${prefix}:${tag}`;
         }
@@ -97,6 +98,12 @@ function fixOnvifNamespaces(body) {
 // ---------------------------------------------------------------------------
 // Main class
 // ---------------------------------------------------------------------------
+const DEVICE_WSDL_PATH = path.join(__dirname, '..', 'wsdl', 'device_service.wsdl');
+const MEDIA_WSDL_PATH  = path.join(__dirname, '..', 'wsdl', 'media_service.wsdl');
+const SNAPSHOT_PATH    = path.join(__dirname, '..', 'resources', 'snapshot.png');
+const DEVICE_WSDL_CLIENT_PATH = path.relative(process.cwd(), DEVICE_WSDL_PATH);
+const MEDIA_WSDL_CLIENT_PATH  = path.relative(process.cwd(), MEDIA_WSDL_PATH);
+
 class OnvifServer {
     constructor(config, logger) {
         this.config = config;
@@ -752,7 +759,7 @@ class OnvifServer {
             // Cache snapshot image to avoid repeated disk I/O (PR #26)
             if (!this.snapshotCache) {
                 try {
-                    this.snapshotCache = fs.readFileSync('./resources/snapshot.png');
+                    this.snapshotCache = fs.readFileSync(SNAPSHOT_PATH);
                 } catch (err) {
                     this.logger.error('Failed to read snapshot.png: ' + err.message);
                     response.writeHead(500, { 'Content-Type': 'text/plain' });
@@ -837,12 +844,13 @@ class OnvifServer {
     async startPtz() {
         const ptzConfig  = this.config.ptz;
         const onvifPort  = ptzConfig.port || 8000;
+        const mediaEndpoint = `http://${this.config.target.hostname}:${onvifPort}/onvif/media_service`;
         const endpoint   = `http://${this.config.target.hostname}:${onvifPort}/onvif/device_service`;
         const soapOpts   = { forceSoap12Headers: true };
         const secOpts    = { hasNonce: true, passwordType: 'PasswordDigest' };
 
-        const mediaClient = await soap.createClientAsync('./wsdl/media_service.wsdl', soapOpts);
-        mediaClient.setEndpoint(endpoint);
+        const mediaClient = await soap.createClientAsync(MEDIA_WSDL_CLIENT_PATH, soapOpts);
+        mediaClient.setEndpoint(mediaEndpoint);
         mediaClient.setSecurity(new soap.WSSecurity(ptzConfig.username, ptzConfig.password, secOpts));
 
         const profiles = (await mediaClient.GetProfilesAsync({}))[0].Profiles;
@@ -872,7 +880,7 @@ class OnvifServer {
         }
 
         // Discover real PTZ endpoint
-        const devClient = await soap.createClientAsync('./wsdl/device_service.wsdl', soapOpts);
+        const devClient = await soap.createClientAsync(DEVICE_WSDL_CLIENT_PATH, soapOpts);
         devClient.setEndpoint(endpoint);
         devClient.setSecurity(new soap.WSSecurity(ptzConfig.username, ptzConfig.password, secOpts));
 
@@ -897,6 +905,12 @@ class OnvifServer {
         };
 
         return this.realPtzProfileToken;
+    }
+
+    _loadWsdl(wsdlPath, servicePath) {
+        const serviceUrl = `http://${this.config.hostname}:${this.config.ports.server}${servicePath}`;
+        return fs.readFileSync(wsdlPath, 'utf8')
+            .replace(/(<soap12:address location=")[^"]+(")/, `$1${serviceUrl}$2`);
     }
 
     // -------------------------------------------------------------------------
@@ -937,14 +951,14 @@ class OnvifServer {
         this.deviceService = soap.listen(this.server, {
             path:             '/onvif/device_service',
             services:         this.onvif,
-            xml:              fs.readFileSync('./wsdl/device_service.wsdl', 'utf8'),
+            xml:              this._loadWsdl(DEVICE_WSDL_PATH, '/onvif/device_service'),
             forceSoap12Headers: true
         });
 
         this.mediaService = soap.listen(this.server, {
             path:             '/onvif/media_service',
             services:         this.onvif,
-            xml:              fs.readFileSync('./wsdl/media_service.wsdl', 'utf8'),
+            xml:              this._loadWsdl(MEDIA_WSDL_PATH, '/onvif/media_service'),
             forceSoap12Headers: true
         });
     }
