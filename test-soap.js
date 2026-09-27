@@ -1,5 +1,8 @@
+const path = require('path');
 const soap = require('soap');
 const onvifServer = require('./src/onvif-server');
+
+const MEDIA_WSDL_PATH = path.join(__dirname, 'wsdl', 'ver10', 'media', 'wsdl', 'media.wsdl');
 
 const config = {
   name: 'SamsungCamera',
@@ -13,7 +16,7 @@ const server = onvifServer.createServer(config, { info: () => {}, debug: () => {
 server.startServer();
 
 setTimeout(async () => {
-  const client = await soap.createClientAsync('./wsdl/media_service.wsdl', { forceSoap12Headers: true });
+  const client = await soap.createClientAsync(MEDIA_WSDL_PATH, { forceSoap12Headers: true });
   client.setEndpoint('http://127.0.0.1:8991/onvif/media_service');
   client.GetProfiles({}, (err, result, rawResponse) => {
     console.log('TRANSFORMED RESPONSE:\n', rawResponse);
