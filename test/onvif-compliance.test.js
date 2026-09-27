@@ -489,4 +489,17 @@ describe('Live SOAP services', () => {
 
         expect(wsdl).toContain('http://127.0.0.1:19081/onvif/device_service');
     });
+
+    it('serves WSDL with the active media endpoint address', async () => {
+        const wsdl = await new Promise((resolve, reject) => {
+            http.get('http://127.0.0.1:19081/onvif/media_service?wsdl', res => {
+                let data = '';
+                res.setEncoding('utf8');
+                res.on('data', chunk => { data += chunk; });
+                res.on('end', () => resolve(data));
+            }).on('error', reject);
+        });
+
+        expect(wsdl).toContain('http://127.0.0.1:19081/onvif/media_service');
+    });
 });
