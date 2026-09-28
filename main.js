@@ -35,7 +35,7 @@ function createTcpProxyServer(localPort, remoteHost, remotePort, logger, debugEn
         socket.destroy();
     };
 
-    const server = net.createServer(clientSocket => {
+    const server = net.createServer({ allowHalfOpen: true }, clientSocket => {
         const client = clientSocket.remoteAddress ? `${clientSocket.remoteAddress}:${clientSocket.remotePort}` : 'client';
         const upstreamSocket = net.connect({ host: remoteHost, port: remotePort });
 
@@ -75,14 +75,6 @@ function createTcpProxyServer(localPort, remoteHost, remotePort, logger, debugEn
         upstreamSocket.on('error', err => {
             logger.error(`TCP proxy :${localPort} upstream error (${remoteHost}:${remotePort}): ${err.message}`);
             closePair();
-        });
-
-        clientSocket.on('end', () => {
-            upstreamSocket.end();
-        });
-
-        upstreamSocket.on('end', () => {
-            clientSocket.end();
         });
 
         clientSocket.on('close', () => {
