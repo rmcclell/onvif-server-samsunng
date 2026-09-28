@@ -504,14 +504,20 @@ describe('Live SOAP services', () => {
     });
 
     it('serves the bundled snapshot as a valid PNG', async () => {
-        const snapshot = await new Promise((resolve, reject) => {
+        const snapshotResponse = await new Promise((resolve, reject) => {
             http.get('http://127.0.0.1:19081/snapshot.png', res => {
                 const chunks = [];
                 res.on('data', chunk => { chunks.push(chunk); });
-                res.on('end', () => resolve(Buffer.concat(chunks)));
+                res.on('end', () => resolve({
+                    statusCode: res.statusCode,
+                    contentType: res.headers['content-type'],
+                    body: Buffer.concat(chunks)
+                }));
             }).on('error', reject);
         });
 
-        expect(snapshot.subarray(0, 8)).toEqual(Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]));
+        expect(snapshotResponse.statusCode).toBe(200);
+        expect(snapshotResponse.contentType).toBe('image/png');
+        expect(snapshotResponse.body.subarray(0, 8)).toEqual(Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]));
     });
 });

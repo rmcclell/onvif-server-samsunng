@@ -932,7 +932,7 @@ class OnvifServer {
                 if (chunk) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding));
                 const contentTypeHeader = response.getHeader('Content-Type') || response.getHeader('content-type') || '';
                 const contentType = Array.isArray(contentTypeHeader) ? contentTypeHeader.join(';') : String(contentTypeHeader);
-                const shouldTransform = /^(?:text\/xml|application\/xml|application\/soap\+xml|application\/[\w.-]+\+xml)(?:\s*;|$)/i.test(contentType.trim());
+                const shouldTransform = /^(?:text\/xml|application\/xml|application\/soap\+xml)(?:\s*;|$)/i.test(contentType.trim());
 
                 if (!shouldTransform) {
                     const body = Buffer.concat(chunks);
