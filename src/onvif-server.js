@@ -69,13 +69,29 @@ const ROOT_SOAP_RESPONSES = new Set([
     'GetSystemDateAndTimeResponse', 'SetSystemDateAndTimeResponse'
 ]);
 
+const SOAP_RESPONSE_PATHS = new Set([
+    '/onvif/device_service',
+    '/onvif/media_service'
+]);
+
 function fixOnvifNamespaces(body) {
     if (!body || (!body.includes('<soap:Envelope') && !body.includes(':Envelope'))) return body;
 
-    if (!body.includes('xmlns:tt=')) {
+    const missingNamespaces = [];
+    if (!/\sxmlns:tt=/.test(body)) {
+        missingNamespaces.push('xmlns:tt="http://www.onvif.org/ver10/schema"');
+    }
+    if (!/\sxmlns:trt=/.test(body)) {
+        missingNamespaces.push('xmlns:trt="http://www.onvif.org/ver10/media/wsdl"');
+    }
+    if (!/\sxmlns:tds=/.test(body)) {
+        missingNamespaces.push('xmlns:tds="http://www.onvif.org/ver10/device/wsdl"');
+    }
+
+    if (missingNamespaces.length > 0) {
         body = body.replace(
             /(<[a-zA-Z0-9_]*:?Envelope[^>]*)(>)/i,
-            '$1 xmlns:tt="http://www.onvif.org/ver10/schema" xmlns:trt="http://www.onvif.org/ver10/media/wsdl" xmlns:tds="http://www.onvif.org/ver10/device/wsdl"$2'
+            `$1 ${missingNamespaces.join(' ')}$2`
         );
     }
 
@@ -93,6 +109,15 @@ function fixOnvifNamespaces(body) {
         }
         return `<${slash}tt:${tag}`;
     });
+}
+
+function getRequestPathname(request) {
+    try {
+        const parsed = new URL(request.url, `http://${request.headers.host || 'localhost'}`);
+        return parsed.pathname;
+    } catch (_) {
+        return (request.url || '/').split('?')[0];
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -747,13 +772,7 @@ class OnvifServer {
     // HTTP request handler
     // -------------------------------------------------------------------------
     _handleRequest(request, response) {
-        let pathname;
-        try {
-            const parsed = new URL(request.url, `http://${request.headers.host || 'localhost'}`);
-            pathname = parsed.pathname;
-        } catch (_) {
-            pathname = (request.url || '/').split('?')[0];
-        }
+        const pathname = getRequestPathname(request);
 
         if (pathname === '/snapshot.png') {
             // Cache snapshot image to avoid repeated disk I/O (PR #26)
@@ -918,27 +937,29 @@ class OnvifServer {
     // -------------------------------------------------------------------------
     startServer() {
         this.server = http.createServer((request, response) => {
-            const origWrite = response.write;
-            const origEnd   = response.end;
-            const chunks    = [];
+            if (SOAP_RESPONSE_PATHS.has(getRequestPathname(request))) {
+                const origWrite = response.write;
+                const origEnd   = response.end;
+                const chunks    = [];
 
-            response.write = function(chunk, encoding, callback) {
-                if (chunk) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding));
-                if (typeof callback === 'function') callback();
-                return true;
-            };
+                response.write = function(chunk, encoding, callback) {
+                    if (chunk) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding));
+                    if (typeof callback === 'function') callback();
+                    return true;
+                };
 
-            response.end = function(chunk, encoding, callback) {
-                if (chunk) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding));
-                let body = Buffer.concat(chunks).toString('utf8');
-                body = fixOnvifNamespaces(body);
+                response.end = function(chunk, encoding, callback) {
+                    if (chunk) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding));
+                    let body = Buffer.concat(chunks).toString('utf8');
+                    body = fixOnvifNamespaces(body);
 
-                try {
-                    response.setHeader('Content-Length', Buffer.byteLength(body));
-                } catch (_) {}
+                    try {
+                        response.setHeader('Content-Length', Buffer.byteLength(body));
+                    } catch (_) {}
 
-                return origEnd.call(this, body, 'utf8', callback);
-            };
+                    return origEnd.call(this, body, 'utf8', callback);
+                };
+            }
 
             this._handleRequest(request, response);
         });

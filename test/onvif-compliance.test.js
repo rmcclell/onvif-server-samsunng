@@ -1,5 +1,6 @@
 'use strict';
 
+const fs = require('fs');
 const http = require('http');
 const path = require('path');
 const soap = require('soap');
@@ -18,6 +19,7 @@ const DEVICE_WSDL_PATH = path.join(__dirname, '..', 'wsdl', 'device_service.wsdl
 const MEDIA_WSDL_PATH  = path.join(__dirname, '..', 'wsdl', 'media_service.wsdl');
 const DEVICE_WSDL_CLIENT_PATH = path.relative(process.cwd(), DEVICE_WSDL_PATH);
 const MEDIA_WSDL_CLIENT_PATH  = path.relative(process.cwd(), MEDIA_WSDL_PATH);
+const SNAPSHOT_PATH = path.join(__dirname, '..', 'resources', 'snapshot.png');
 
 // ─── Mock logger ─────────────────────────────────────────────────────────────
 const noop   = () => {};
@@ -52,6 +54,23 @@ function buildConfig(overrides = {}) {
 
 function makeServer(overrides = {}) {
     return OnvifServerModule.createServer(buildConfig(overrides), logger);
+}
+
+function httpRequest(options, body) {
+    return new Promise((resolve, reject) => {
+        const req = http.request(options, res => {
+            const chunks = [];
+            res.on('data', chunk => chunks.push(chunk));
+            res.on('end', () => resolve({
+                statusCode: res.statusCode,
+                headers: res.headers,
+                body: Buffer.concat(chunks)
+            }));
+        });
+        req.on('error', reject);
+        if (body) req.write(body);
+        req.end();
+    });
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -501,5 +520,45 @@ describe('Live SOAP services', () => {
         });
 
         expect(wsdl).toContain('http://127.0.0.1:19081/onvif/media_service');
+    });
+
+    it('preserves snapshot.png bytes', async () => {
+        const expected = fs.readFileSync(SNAPSHOT_PATH);
+        const response = await httpRequest({
+            hostname: '127.0.0.1',
+            port: 19081,
+            path: '/snapshot.png',
+            method: 'GET'
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.headers['content-type']).toBe('image/png');
+        expect(response.body.equals(expected)).toBe(true);
+    });
+
+    it('does not duplicate SOAP namespace declarations', async () => {
+        const requestBody = `<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:tds="http://www.onvif.org/ver10/device/wsdl">
+  <soap:Body>
+    <tds:GetSystemDateAndTime/>
+  </soap:Body>
+</soap:Envelope>`;
+        const response = await httpRequest({
+            hostname: '127.0.0.1',
+            port: 19081,
+            path: '/onvif/device_service',
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/soap+xml; charset=utf-8',
+                'Content-Length': Buffer.byteLength(requestBody)
+            }
+        }, requestBody);
+        const xml = response.body.toString('utf8');
+
+        expect(response.statusCode).toBe(200);
+        expect((xml.match(/xmlns:tds=/g) || []).length).toBe(1);
+        expect((xml.match(/xmlns:tt=/g) || []).length).toBe(1);
+        expect(xml).toContain('<tds:GetSystemDateAndTimeResponse');
+        expect(xml).toContain('<tt:SystemDateAndTime>');
     });
 });
