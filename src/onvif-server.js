@@ -930,6 +930,17 @@ class OnvifServer {
 
             response.end = function(chunk, encoding, callback) {
                 if (chunk) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding));
+                const contentTypeHeader = response.getHeader('Content-Type') || response.getHeader('content-type') || '';
+                const contentType = Array.isArray(contentTypeHeader) ? contentTypeHeader.join(';') : String(contentTypeHeader);
+                const shouldTransform = /(?:^|\/|\+)(xml)|soap/i.test(contentType);
+
+                if (!shouldTransform) {
+                    for (const bufferedChunk of chunks) {
+                        origWrite.call(this, bufferedChunk);
+                    }
+                    return origEnd.call(this, null, null, callback);
+                }
+
                 let body = Buffer.concat(chunks).toString('utf8');
                 body = fixOnvifNamespaces(body);
 
