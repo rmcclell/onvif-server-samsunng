@@ -80,6 +80,12 @@ function getSoapResponsePrefix(tag) {
            tag.startsWith('SetSystem') || tag.startsWith('GetSystemDate') ? 'tds' : 'trt';
 }
 
+function stripDefaultOnvifNamespace(suffix) {
+    return suffix
+        .replace(' xmlns="http://www.onvif.org/ver10/device/wsdl"', '')
+        .replace(' xmlns="http://www.onvif.org/ver10/media/wsdl"', '');
+}
+
 function fixOnvifNamespaces(body) {
     if (!body || (!body.includes('<soap:Envelope') && !body.includes(':Envelope'))) return body;
 
@@ -108,7 +114,7 @@ function fixOnvifNamespaces(body) {
         return `<${slash}tt:${tag}`;
     });
 
-    return body.replace(/<(\/?)(?![a-zA-Z0-9_]+:)([a-zA-Z0-9_]+)([^>]*)>/g, (match, slash, tag, suffix) => {
+    return body.replace(/<(\/?)(?![?!])(?!(?:[a-zA-Z0-9_]+:))([a-zA-Z0-9_]+)([^>]*)>/g, (match, slash, tag, suffix) => {
         if (tag === 'Envelope' || tag === 'Header' || tag === 'Body') {
             return match;
         }
@@ -119,7 +125,7 @@ function fixOnvifNamespaces(body) {
         if (ROOT_SOAP_RESPONSES.has(tag)) {
             prefix = getSoapResponsePrefix(tag);
             if (!slash) {
-                nextSuffix = nextSuffix.replace(/\s+xmlns="http:\/\/www\.onvif\.org\/ver10\/(?:device|media)\/wsdl"/, '');
+                nextSuffix = stripDefaultOnvifNamespace(nextSuffix);
             }
         }
 
