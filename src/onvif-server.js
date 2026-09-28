@@ -69,6 +69,15 @@ const ROOT_SOAP_RESPONSES = new Set([
     'GetSystemDateAndTimeResponse', 'SetSystemDateAndTimeResponse'
 ]);
 
+const ONVIF_SCHEMA_NS = 'http://www.onvif.org/ver10/schema';
+const ONVIF_MEDIA_WSDL_NS = 'http://www.onvif.org/ver10/media/wsdl';
+const ONVIF_DEVICE_WSDL_NS = 'http://www.onvif.org/ver10/device/wsdl';
+const ONVIF_DEFAULT_NAMESPACES = new Set([
+    ONVIF_SCHEMA_NS,
+    ONVIF_MEDIA_WSDL_NS,
+    ONVIF_DEVICE_WSDL_NS
+]);
+
 function getSoapResponsePrefix(tag) {
     return tag.startsWith('GetCapabilities') || tag.startsWith('GetServices') ||
            tag.startsWith('GetDevice') || tag.startsWith('GetNetwork') ||
@@ -82,8 +91,43 @@ function getSoapResponsePrefix(tag) {
 
 function stripDefaultOnvifNamespace(suffix) {
     return suffix
-        .replace(' xmlns="http://www.onvif.org/ver10/device/wsdl"', '')
-        .replace(' xmlns="http://www.onvif.org/ver10/media/wsdl"', '');
+        .replace(` xmlns="${ONVIF_DEVICE_WSDL_NS}"`, '')
+        .replace(` xmlns="${ONVIF_MEDIA_WSDL_NS}"`, '')
+        .replace(` xmlns="${ONVIF_SCHEMA_NS}"`, '');
+}
+
+function normalizeDefaultOnvifTags(body) {
+    const defaultNamespaceStack = [];
+
+    return body.replace(/<(\/?)(?:([a-zA-Z0-9_]+):)?([a-zA-Z0-9_]+)([^>]*)>/g, (match, slash, tagPrefix, tag, suffix) => {
+        const isClosingTag = slash === '/';
+        const isSelfClosingTag = !isClosingTag && /\/\s*$/.test(suffix);
+        const currentDefaultNamespace = defaultNamespaceStack.length > 0
+            ? defaultNamespaceStack[defaultNamespaceStack.length - 1]
+            : null;
+        const defaultNamespaceMatch = !isClosingTag ? suffix.match(/\sxmlns="([^"]*)"/) : null;
+        const nextDefaultNamespace = defaultNamespaceMatch
+            ? (defaultNamespaceMatch[1] || null)
+            : currentDefaultNamespace;
+        let nextMatch = match;
+
+        if (!tagPrefix && tag !== 'Envelope' && tag !== 'Header' && tag !== 'Body' &&
+            nextDefaultNamespace && ONVIF_DEFAULT_NAMESPACES.has(nextDefaultNamespace)) {
+            const normalizedPrefix = ROOT_SOAP_RESPONSES.has(tag) ? getSoapResponsePrefix(tag) : 'tt';
+            const nextSuffix = !isClosingTag ? stripDefaultOnvifNamespace(suffix) : suffix;
+            nextMatch = `<${slash}${normalizedPrefix}:${tag}${nextSuffix}>`;
+        }
+
+        if (isClosingTag) {
+            if (defaultNamespaceStack.length > 0) {
+                defaultNamespaceStack.pop();
+            }
+        } else if (!isSelfClosingTag) {
+            defaultNamespaceStack.push(nextDefaultNamespace);
+        }
+
+        return nextMatch;
+    });
 }
 
 function fixOnvifNamespaces(body) {
@@ -91,13 +135,13 @@ function fixOnvifNamespaces(body) {
 
     const missingNamespaces = [];
     if (!/\sxmlns:tt=/.test(body)) {
-        missingNamespaces.push('xmlns:tt="http://www.onvif.org/ver10/schema"');
+        missingNamespaces.push(`xmlns:tt="${ONVIF_SCHEMA_NS}"`);
     }
     if (!/\sxmlns:trt=/.test(body)) {
-        missingNamespaces.push('xmlns:trt="http://www.onvif.org/ver10/media/wsdl"');
+        missingNamespaces.push(`xmlns:trt="${ONVIF_MEDIA_WSDL_NS}"`);
     }
     if (!/\sxmlns:tds=/.test(body)) {
-        missingNamespaces.push('xmlns:tds="http://www.onvif.org/ver10/device/wsdl"');
+        missingNamespaces.push(`xmlns:tds="${ONVIF_DEVICE_WSDL_NS}"`);
     }
 
     if (missingNamespaces.length > 0) {
@@ -114,23 +158,7 @@ function fixOnvifNamespaces(body) {
         return `<${slash}tt:${tag}`;
     });
 
-    return body.replace(/<(\/?)(?![?!])(?!(?:[a-zA-Z0-9_]+:))([a-zA-Z0-9_]+)([^>]*)>/g, (match, slash, tag, suffix) => {
-        if (tag === 'Envelope' || tag === 'Header' || tag === 'Body') {
-            return match;
-        }
-
-        let nextSuffix = suffix;
-        let prefix = 'tt';
-
-        if (ROOT_SOAP_RESPONSES.has(tag)) {
-            prefix = getSoapResponsePrefix(tag);
-            if (!slash) {
-                nextSuffix = stripDefaultOnvifNamespace(nextSuffix);
-            }
-        }
-
-        return `<${slash}${prefix}:${tag}${nextSuffix}>`;
-    });
+    return normalizeDefaultOnvifTags(body);
 }
 
 function getRequestPathname(request) {
