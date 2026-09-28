@@ -93,7 +93,7 @@ function createTcpProxyServer(localPort, remoteHost, remotePort, logger, debugEn
         } catch (_) {}
     });
 
-    server.end = () => {
+    server.shutdown = () => {
         for (const socket of connections) destroySocket(socket);
         connections.clear();
         server.close();
@@ -230,7 +230,7 @@ if (args.create_config) {
         logger.info(`\nReceived ${signal}, shutting down...`);
 
         for (const proxy of proxyServers) {
-            try { proxy.end(); } catch (_) {}
+            try { proxy.shutdown(); } catch (_) {}
         }
 
         await Promise.all(servers.map(s => s.shutdown()));
