@@ -56,6 +56,10 @@ function createTcpProxyServer(localPort, remoteHost, remotePort, logger, debugEn
             upstreamSocket.pipe(clientSocket);
         });
 
+        const removeSocket = (socket) => {
+            connections.delete(socket);
+        };
+
         const closePair = () => {
             connections.delete(clientSocket);
             connections.delete(upstreamSocket);
@@ -73,14 +77,24 @@ function createTcpProxyServer(localPort, remoteHost, remotePort, logger, debugEn
             closePair();
         });
 
+        clientSocket.on('end', () => {
+            upstreamSocket.end();
+        });
+
+        upstreamSocket.on('end', () => {
+            clientSocket.end();
+        });
+
         clientSocket.on('close', () => {
             if (debugEnabled) {
                 logger.debug(`TCP proxy :${localPort} → ${remoteHost}:${remotePort} | Client disconnected: ${client}`);
             }
-            closePair();
+            removeSocket(clientSocket);
         });
 
-        upstreamSocket.on('close', closePair);
+        upstreamSocket.on('close', () => {
+            removeSocket(upstreamSocket);
+        });
     });
 
     server.on('error', err => {
