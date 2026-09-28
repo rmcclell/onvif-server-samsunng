@@ -935,10 +935,8 @@ class OnvifServer {
                 const shouldTransform = /^(?:text\/xml|application\/xml|application\/soap\+xml|application\/[\w.-]+\+xml)(?:\s*;|$)/i.test(contentType.trim());
 
                 if (!shouldTransform) {
-                    for (const bufferedChunk of chunks) {
-                        origWrite.call(this, bufferedChunk);
-                    }
-                    return origEnd.call(this, null, null, callback);
+                    const body = Buffer.concat(chunks);
+                    return origEnd.call(this, body, undefined, callback);
                 }
 
                 let body = Buffer.concat(chunks).toString('utf8');
