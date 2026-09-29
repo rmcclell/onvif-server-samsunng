@@ -69,30 +69,113 @@ const ROOT_SOAP_RESPONSES = new Set([
     'GetSystemDateAndTimeResponse', 'SetSystemDateAndTimeResponse'
 ]);
 
+const ONVIF_SCHEMA_NS = 'http://www.onvif.org/ver10/schema';
+const ONVIF_MEDIA_WSDL_NS = 'http://www.onvif.org/ver10/media/wsdl';
+const ONVIF_DEVICE_WSDL_NS = 'http://www.onvif.org/ver10/device/wsdl';
+const ONVIF_DEFAULT_NAMESPACES = new Set([
+    ONVIF_SCHEMA_NS,
+    ONVIF_MEDIA_WSDL_NS,
+    ONVIF_DEVICE_WSDL_NS
+]);
+
+function getSoapResponsePrefix(tag) {
+    return tag.startsWith('GetCapabilities') || tag.startsWith('GetServices') ||
+           tag.startsWith('GetDevice') || tag.startsWith('GetNetwork') ||
+           tag.startsWith('GetUsers') || tag.startsWith('GetScopes') ||
+           tag.startsWith('GetDNS') || tag.startsWith('GetNTP') ||
+           tag.startsWith('GetHostname') || tag.startsWith('GetDiscovery') ||
+           tag.startsWith('GetRelay') || tag.startsWith('GetDynamic') ||
+           tag.startsWith('GetWsdl') || tag.startsWith('GetServiceCapabilities') || tag.startsWith('System') ||
+           tag.startsWith('SetSystem') || tag.startsWith('GetSystemDate') ? 'tds' : 'trt';
+}
+
+function stripDefaultOnvifNamespace(suffix) {
+    return suffix
+        .replace(` xmlns="${ONVIF_DEVICE_WSDL_NS}"`, '')
+        .replace(` xmlns="${ONVIF_MEDIA_WSDL_NS}"`, '')
+        .replace(` xmlns="${ONVIF_SCHEMA_NS}"`, '');
+}
+
+function normalizeDefaultOnvifTags(body) {
+    const defaultNamespaceStack = [];
+
+    return body.replace(/<(\/?)(?:([a-zA-Z0-9_]+):)?([a-zA-Z0-9_]+)([^>]*)>/g, (match, slash, tagPrefix, tag, suffix) => {
+        const isClosingTag = slash === '/';
+        const isSelfClosingTag = !isClosingTag && /\/\s*$/.test(suffix);
+        const currentDefaultNamespace = defaultNamespaceStack.length > 0
+            ? defaultNamespaceStack[defaultNamespaceStack.length - 1]
+            : null;
+        const defaultNamespaceMatch = !isClosingTag ? suffix.match(/\sxmlns="([^"]*)"/) : null;
+        const nextDefaultNamespace = defaultNamespaceMatch
+            ? (defaultNamespaceMatch[1] || null)
+            : currentDefaultNamespace;
+        let nextMatch = match;
+
+        if (!tagPrefix && tag !== 'Envelope' && tag !== 'Header' && tag !== 'Body' &&
+            nextDefaultNamespace && ONVIF_DEFAULT_NAMESPACES.has(nextDefaultNamespace)) {
+            const normalizedPrefix = ROOT_SOAP_RESPONSES.has(tag) ? getSoapResponsePrefix(tag) : 'tt';
+            const nextSuffix = !isClosingTag ? stripDefaultOnvifNamespace(suffix) : suffix;
+            nextMatch = `<${slash}${normalizedPrefix}:${tag}${nextSuffix}>`;
+        }
+
+        if (isClosingTag) {
+            if (defaultNamespaceStack.length > 0) {
+                defaultNamespaceStack.pop();
+            }
+        } else if (!isSelfClosingTag) {
+            defaultNamespaceStack.push(nextDefaultNamespace);
+        }
+
+        return nextMatch;
+    });
+}
+
 function fixOnvifNamespaces(body) {
     if (!body || (!body.includes('<soap:Envelope') && !body.includes(':Envelope'))) return body;
 
-    if (!body.includes('xmlns:tt=')) {
+    const missingNamespaces = [];
+    if (!/\sxmlns:tt=/.test(body)) {
+        missingNamespaces.push(`xmlns:tt="${ONVIF_SCHEMA_NS}"`);
+    }
+    if (!/\sxmlns:trt=/.test(body)) {
+        missingNamespaces.push(`xmlns:trt="${ONVIF_MEDIA_WSDL_NS}"`);
+    }
+    if (!/\sxmlns:tds=/.test(body)) {
+        missingNamespaces.push(`xmlns:tds="${ONVIF_DEVICE_WSDL_NS}"`);
+    }
+
+    if (missingNamespaces.length > 0) {
         body = body.replace(
             /(<[a-zA-Z0-9_]*:?Envelope[^>]*)(>)/i,
-            '$1 xmlns:tt="http://www.onvif.org/ver10/schema" xmlns:trt="http://www.onvif.org/ver10/media/wsdl" xmlns:tds="http://www.onvif.org/ver10/device/wsdl"$2'
+            `$1 ${missingNamespaces.join(' ')}$2`
         );
     }
 
-    return body.replace(/<(\/?)(?:trt|tds):([a-zA-Z0-9_]+)(?=[>\s/])/g, (match, slash, tag) => {
+    body = body.replace(/<(\/?)(?:trt|tds):([a-zA-Z0-9_]+)(?=[>\s/])/g, (match, slash, tag) => {
         if (ROOT_SOAP_RESPONSES.has(tag)) {
-            const prefix = tag.startsWith('GetCapabilities') || tag.startsWith('GetServices') ||
-                           tag.startsWith('GetDevice') || tag.startsWith('GetNetwork') ||
-                           tag.startsWith('GetUsers') || tag.startsWith('GetScopes') ||
-                           tag.startsWith('GetDNS') || tag.startsWith('GetNTP') ||
-                           tag.startsWith('GetHostname') || tag.startsWith('GetDiscovery') ||
-                           tag.startsWith('GetRelay') || tag.startsWith('GetDynamic') ||
-                           tag.startsWith('GetWsdl') || tag.startsWith('GetServiceCapabilities') || tag.startsWith('System') ||
-                           tag.startsWith('SetSystem') || tag.startsWith('GetSystemDate') ? 'tds' : 'trt';
-            return `<${slash}${prefix}:${tag}`;
+            return `<${slash}${getSoapResponsePrefix(tag)}:${tag}`;
         }
         return `<${slash}tt:${tag}`;
     });
+
+    return normalizeDefaultOnvifTags(body);
+}
+
+function getRequestPathname(request) {
+    try {
+        const parsed = new URL(request.url, `http://${request.headers.host || 'localhost'}`);
+        return parsed.pathname;
+    } catch (_) {
+        return (request.url || '/').split('?')[0];
+    }
+}
+
+function wrapSoapHttpResponse(soapServer) {
+    const origSendHttpResponse = soapServer._sendHttpResponse.bind(soapServer);
+    soapServer._sendHttpResponse = (response, statusCode, result) => {
+        const nextResult = typeof result === 'string' ? fixOnvifNamespaces(result) : result;
+        return origSendHttpResponse(response, statusCode, nextResult);
+    };
 }
 
 // ---------------------------------------------------------------------------
@@ -747,13 +830,7 @@ class OnvifServer {
     // HTTP request handler
     // -------------------------------------------------------------------------
     _handleRequest(request, response) {
-        let pathname;
-        try {
-            const parsed = new URL(request.url, `http://${request.headers.host || 'localhost'}`);
-            pathname = parsed.pathname;
-        } catch (_) {
-            pathname = (request.url || '/').split('?')[0];
-        }
+        const pathname = getRequestPathname(request);
 
         if (pathname === '/snapshot.png') {
             // Cache snapshot image to avoid repeated disk I/O (PR #26)
@@ -917,31 +994,7 @@ class OnvifServer {
     // Start HTTP + SOAP services
     // -------------------------------------------------------------------------
     startServer() {
-        this.server = http.createServer((request, response) => {
-            const origWrite = response.write;
-            const origEnd   = response.end;
-            const chunks    = [];
-
-            response.write = function(chunk, encoding, callback) {
-                if (chunk) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding));
-                if (typeof callback === 'function') callback();
-                return true;
-            };
-
-            response.end = function(chunk, encoding, callback) {
-                if (chunk) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding));
-                let body = Buffer.concat(chunks).toString('utf8');
-                body = fixOnvifNamespaces(body);
-
-                try {
-                    response.setHeader('Content-Length', Buffer.byteLength(body));
-                } catch (_) {}
-
-                return origEnd.call(this, body, 'utf8', callback);
-            };
-
-            this._handleRequest(request, response);
-        });
+        this.server = http.createServer((request, response) => this._handleRequest(request, response));
 
         this.server.on('error', err => {
             this.logger.error(`HTTP server error: ${err.message}`);
@@ -954,6 +1007,7 @@ class OnvifServer {
             xml:              this._loadWsdl(DEVICE_WSDL_PATH, '/onvif/device_service'),
             forceSoap12Headers: true
         });
+        wrapSoapHttpResponse(this.deviceService);
 
         this.mediaService = soap.listen(this.server, {
             path:             '/onvif/media_service',
@@ -961,6 +1015,7 @@ class OnvifServer {
             xml:              this._loadWsdl(MEDIA_WSDL_PATH, '/onvif/media_service'),
             forceSoap12Headers: true
         });
+        wrapSoapHttpResponse(this.mediaService);
     }
 
     // -------------------------------------------------------------------------
