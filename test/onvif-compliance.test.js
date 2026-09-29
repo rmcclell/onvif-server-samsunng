@@ -661,4 +661,33 @@ describe('Live SOAP services', () => {
         expect(xml).toContain('<tds:GetSystemDateAndTimeResponse');
         expect(xml).toContain('<tt:SystemDateAndTime>');
     });
+
+    it.each([
+        ['/onvif/device_service', 'tds', 'http://www.onvif.org/ver10/device/wsdl', 'GetSystemUris'],
+        ['/onvif/media_service', 'trt', 'http://www.onvif.org/ver10/media/wsdl', 'GetOSDs']
+    ])('returns an ONVIF fault for unsupported operations on %s', async (endpoint, prefix, namespace, operation) => {
+        const requestBody = `<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:${prefix}="${namespace}">
+  <soap:Body>
+    <${prefix}:${operation}/>
+  </soap:Body>
+</soap:Envelope>`;
+        const response = await httpRequest({
+            hostname: '127.0.0.1',
+            port: 19081,
+            path: endpoint,
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/soap+xml; charset=utf-8',
+                'Content-Length': Buffer.byteLength(requestBody)
+            }
+        }, requestBody);
+        const xml = response.body.toString('utf8');
+
+        expect(response.statusCode).toBe(500);
+        expect(xml).toContain('ter:ActionNotSupported');
+        expect(xml).toContain('The requested ONVIF operation is not supported.');
+        expect(xml).not.toContain('TypeError');
+        expect(xml).not.toContain('node_modules');
+    });
 });
