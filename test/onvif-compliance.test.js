@@ -586,6 +586,27 @@ describe('Live SOAP services', () => {
         }
     });
 
+    it('returns a gateway error when FFmpeg cannot retrieve a frame', async () => {
+        const mock = jest.spyOn(childProcess, 'execFile').mockImplementation((_file, _args, _opts, cb) => {
+            cb(new Error('failed'), Buffer.alloc(0));
+        });
+        const direct = makeServer({
+            hostname: '127.0.0.1',
+            ports: { server: 19083, rtsp: 19555 },
+            highQuality: { ...buildConfig().highQuality, rtsp: 'rtsp://camera.example/main', snapshot: undefined }
+        });
+        direct.startServer();
+        try {
+            const res = await httpRequest({
+                hostname: '127.0.0.1', port: 19083, path: '/snapshot.jpg', method: 'GET'
+            });
+            expect(res.statusCode).toBe(502);
+        } finally {
+            await direct.shutdown();
+            mock.mockRestore();
+        }
+    });
+
     it('does not duplicate SOAP namespace declarations', async () => {
         const requestBody = `<?xml version="1.0" encoding="utf-8"?>
 <soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:tds="http://www.onvif.org/ver10/device/wsdl">
