@@ -195,6 +195,7 @@ class OnvifServer {
 
         // --- PR #26 additions ---
         this.snapshotCache       = null;
+        this.snapshotInProgress  = false;
         this.debugListenersAdded = false;
         this.xmlParser           = new xml2js.Parser({ tagNameProcessors: [xml2js.processors.stripPrefix] });
 
@@ -837,10 +838,17 @@ class OnvifServer {
                 response.end();
                 return;
             }
+            if (this.snapshotInProgress) {
+                response.writeHead(503, { 'Retry-After': '1' });
+                response.end();
+                return;
+            }
+            this.snapshotInProgress = true;
             childProcess.execFile('ffmpeg', ['-nostdin', '-loglevel', 'error', '-rtsp_transport', 'tcp',
                 '-i', quality.rtsp, '-frames:v', '1', '-f', 'image2pipe', '-vcodec', 'mjpeg', '-'],
             { encoding: 'buffer', timeout: 10000, maxBuffer: 10 * 1024 * 1024 },
             (err, stdout) => {
+                this.snapshotInProgress = false;
                 if (err || !stdout || !stdout.length) {
                     this.logger.error('Failed to generate RTSP snapshot');
                     response.writeHead(502);

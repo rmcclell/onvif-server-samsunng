@@ -607,6 +607,35 @@ describe('Live SOAP services', () => {
         }
     });
 
+    it('limits concurrent FFmpeg snapshot processes', async () => {
+        let finish;
+        let started;
+        const running = new Promise(resolve => { started = resolve; });
+        const mock = jest.spyOn(childProcess, 'execFile').mockImplementation((_file, _args, _opts, cb) => {
+            finish = cb;
+            started();
+        });
+        const direct = makeServer({
+            hostname: '127.0.0.1',
+            ports: { server: 19084, rtsp: 19555 },
+            highQuality: { ...buildConfig().highQuality, rtsp: 'rtsp://camera.example/main', snapshot: undefined }
+        });
+        direct.startServer();
+        try {
+            const options = { hostname: '127.0.0.1', port: 19084, path: '/snapshot.jpg', method: 'GET' };
+            const first = httpRequest(options);
+            await running;
+            const second = await httpRequest(options);
+            expect(second.statusCode).toBe(503);
+            expect(mock).toHaveBeenCalledTimes(1);
+            finish(null, Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
+            expect((await first).statusCode).toBe(200);
+        } finally {
+            await direct.shutdown();
+            mock.mockRestore();
+        }
+    });
+
     it('does not duplicate SOAP namespace declarations', async () => {
         const requestBody = `<?xml version="1.0" encoding="utf-8"?>
 <soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:tds="http://www.onvif.org/ver10/device/wsdl">
