@@ -8,6 +8,7 @@ const uuid  = require('node-uuid');
 const fs    = require('fs');
 const os    = require('os');
 const path  = require('path');
+const childProcess = require('child_process');
 const { URL } = require('url');
 
 // ---------------------------------------------------------------------------
@@ -69,30 +70,113 @@ const ROOT_SOAP_RESPONSES = new Set([
     'GetSystemDateAndTimeResponse', 'SetSystemDateAndTimeResponse'
 ]);
 
+const ONVIF_SCHEMA_NS = 'http://www.onvif.org/ver10/schema';
+const ONVIF_MEDIA_WSDL_NS = 'http://www.onvif.org/ver10/media/wsdl';
+const ONVIF_DEVICE_WSDL_NS = 'http://www.onvif.org/ver10/device/wsdl';
+const ONVIF_DEFAULT_NAMESPACES = new Set([
+    ONVIF_SCHEMA_NS,
+    ONVIF_MEDIA_WSDL_NS,
+    ONVIF_DEVICE_WSDL_NS
+]);
+
+function getSoapResponsePrefix(tag) {
+    return tag.startsWith('GetCapabilities') || tag.startsWith('GetServices') ||
+           tag.startsWith('GetDevice') || tag.startsWith('GetNetwork') ||
+           tag.startsWith('GetUsers') || tag.startsWith('GetScopes') ||
+           tag.startsWith('GetDNS') || tag.startsWith('GetNTP') ||
+           tag.startsWith('GetHostname') || tag.startsWith('GetDiscovery') ||
+           tag.startsWith('GetRelay') || tag.startsWith('GetDynamic') ||
+           tag.startsWith('GetWsdl') || tag.startsWith('GetServiceCapabilities') || tag.startsWith('System') ||
+           tag.startsWith('SetSystem') || tag.startsWith('GetSystemDate') ? 'tds' : 'trt';
+}
+
+function stripDefaultOnvifNamespace(suffix) {
+    return suffix
+        .replace(` xmlns="${ONVIF_DEVICE_WSDL_NS}"`, '')
+        .replace(` xmlns="${ONVIF_MEDIA_WSDL_NS}"`, '')
+        .replace(` xmlns="${ONVIF_SCHEMA_NS}"`, '');
+}
+
+function normalizeDefaultOnvifTags(body) {
+    const defaultNamespaceStack = [];
+
+    return body.replace(/<(\/?)(?:([a-zA-Z0-9_]+):)?([a-zA-Z0-9_]+)([^>]*)>/g, (match, slash, tagPrefix, tag, suffix) => {
+        const isClosingTag = slash === '/';
+        const isSelfClosingTag = !isClosingTag && /\/\s*$/.test(suffix);
+        const currentDefaultNamespace = defaultNamespaceStack.length > 0
+            ? defaultNamespaceStack[defaultNamespaceStack.length - 1]
+            : null;
+        const defaultNamespaceMatch = !isClosingTag ? suffix.match(/\sxmlns="([^"]*)"/) : null;
+        const nextDefaultNamespace = defaultNamespaceMatch
+            ? (defaultNamespaceMatch[1] || null)
+            : currentDefaultNamespace;
+        let nextMatch = match;
+
+        if (!tagPrefix && tag !== 'Envelope' && tag !== 'Header' && tag !== 'Body' &&
+            nextDefaultNamespace && ONVIF_DEFAULT_NAMESPACES.has(nextDefaultNamespace)) {
+            const normalizedPrefix = ROOT_SOAP_RESPONSES.has(tag) ? getSoapResponsePrefix(tag) : 'tt';
+            const nextSuffix = !isClosingTag ? stripDefaultOnvifNamespace(suffix) : suffix;
+            nextMatch = `<${slash}${normalizedPrefix}:${tag}${nextSuffix}>`;
+        }
+
+        if (isClosingTag) {
+            if (defaultNamespaceStack.length > 0) {
+                defaultNamespaceStack.pop();
+            }
+        } else if (!isSelfClosingTag) {
+            defaultNamespaceStack.push(nextDefaultNamespace);
+        }
+
+        return nextMatch;
+    });
+}
+
 function fixOnvifNamespaces(body) {
     if (!body || (!body.includes('<soap:Envelope') && !body.includes(':Envelope'))) return body;
 
-    if (!body.includes('xmlns:tt=')) {
+    const missingNamespaces = [];
+    if (!/\sxmlns:tt=/.test(body)) {
+        missingNamespaces.push(`xmlns:tt="${ONVIF_SCHEMA_NS}"`);
+    }
+    if (!/\sxmlns:trt=/.test(body)) {
+        missingNamespaces.push(`xmlns:trt="${ONVIF_MEDIA_WSDL_NS}"`);
+    }
+    if (!/\sxmlns:tds=/.test(body)) {
+        missingNamespaces.push(`xmlns:tds="${ONVIF_DEVICE_WSDL_NS}"`);
+    }
+
+    if (missingNamespaces.length > 0) {
         body = body.replace(
             /(<[a-zA-Z0-9_]*:?Envelope[^>]*)(>)/i,
-            '$1 xmlns:tt="http://www.onvif.org/ver10/schema" xmlns:trt="http://www.onvif.org/ver10/media/wsdl" xmlns:tds="http://www.onvif.org/ver10/device/wsdl"$2'
+            `$1 ${missingNamespaces.join(' ')}$2`
         );
     }
 
-    return body.replace(/<(\/?)(?:trt|tds):([a-zA-Z0-9_]+)(?=[>\s/])/g, (match, slash, tag) => {
+    body = body.replace(/<(\/?)(?:trt|tds):([a-zA-Z0-9_]+)(?=[>\s/])/g, (match, slash, tag) => {
         if (ROOT_SOAP_RESPONSES.has(tag)) {
-            const prefix = tag.startsWith('GetCapabilities') || tag.startsWith('GetServices') ||
-                           tag.startsWith('GetDevice') || tag.startsWith('GetNetwork') ||
-                           tag.startsWith('GetUsers') || tag.startsWith('GetScopes') ||
-                           tag.startsWith('GetDNS') || tag.startsWith('GetNTP') ||
-                           tag.startsWith('GetHostname') || tag.startsWith('GetDiscovery') ||
-                           tag.startsWith('GetRelay') || tag.startsWith('GetDynamic') ||
-                           tag.startsWith('GetWsdl') || tag.startsWith('GetServiceCapabilities') || tag.startsWith('System') ||
-                           tag.startsWith('SetSystem') || tag.startsWith('GetSystemDate') ? 'tds' : 'trt';
-            return `<${slash}${prefix}:${tag}`;
+            return `<${slash}${getSoapResponsePrefix(tag)}:${tag}`;
         }
         return `<${slash}tt:${tag}`;
     });
+
+    return normalizeDefaultOnvifTags(body);
+}
+
+function getRequestPathname(request) {
+    try {
+        const parsed = new URL(request.url, `http://${request.headers.host || 'localhost'}`);
+        return parsed.pathname;
+    } catch (_) {
+        return (request.url || '/').split('?')[0];
+    }
+}
+
+function wrapSoapHttpResponse(soapServer) {
+    const origSendHttpResponse = soapServer._sendHttpResponse.bind(soapServer);
+    soapServer._sendHttpResponse = (response, statusCode, result) => {
+        const nextResult = typeof result === 'string' ? fixOnvifNamespaces(result) : result;
+        return origSendHttpResponse(response, statusCode, nextResult);
+    };
 }
 
 // ---------------------------------------------------------------------------
@@ -111,6 +195,7 @@ class OnvifServer {
 
         // --- PR #26 additions ---
         this.snapshotCache       = null;
+        this.snapshotInProgress  = false;
         this.debugListenersAdded = false;
         this.xmlParser           = new xml2js.Parser({ tagNameProcessors: [xml2js.processors.stripPrefix] });
 
@@ -683,6 +768,8 @@ class OnvifServer {
             GetSnapshotUri: (args) => {
                 const profileToken = args && args.ProfileToken;
                 let uri = `http://${this.config.hostname}:${this.config.ports.server}/snapshot.png`;
+                const quality = profileToken === 'sub_stream' && this.config.lowQuality
+                    ? this.config.lowQuality : this.config.highQuality;
 
                 const extractCleanPath = (p) => {
                     if (!p) return '';
@@ -695,10 +782,10 @@ class OnvifServer {
                     return p.startsWith('/') ? p : '/' + p;
                 };
 
-                if (profileToken === 'sub_stream' && this.config.lowQuality && this.config.lowQuality.snapshot) {
-                    uri = `http://${this.config.hostname}:${this.config.ports.snapshot}${extractCleanPath(this.config.lowQuality.snapshot)}`;
-                } else if (this.config.highQuality && this.config.highQuality.snapshot) {
-                    uri = `http://${this.config.hostname}:${this.config.ports.snapshot}${extractCleanPath(this.config.highQuality.snapshot)}`;
+                if (quality.snapshot && this.config.ports.snapshot) {
+                    uri = `http://${this.config.hostname}:${this.config.ports.snapshot}${extractCleanPath(quality.snapshot)}`;
+                } else if (/^rtsp:\/\//i.test(quality.rtsp || '')) {
+                    uri = `http://${this.config.hostname}:${this.config.ports.server}/snapshot.jpg?profile=${profileToken === 'sub_stream' ? 'sub_stream' : 'main_stream'}`;
                 }
 
                 return {
@@ -719,21 +806,14 @@ class OnvifServer {
                 }
 
                 let cleanPath = rawPath || '';
-                if (cleanPath.includes('://')) {
-                    try {
-                        cleanPath = new URL(cleanPath).pathname;
-                    } catch (_) {
-                        const idx = cleanPath.indexOf('/', cleanPath.indexOf('//') + 2);
-                        cleanPath = idx > -1 ? cleanPath.substring(idx) : cleanPath;
-                    }
-                }
                 if (cleanPath && !cleanPath.startsWith('/')) {
                     cleanPath = '/' + cleanPath;
                 }
 
                 return {
                     MediaUri: {
-                        Uri: `rtsp://${this.config.hostname}:${this.config.ports.rtsp}${cleanPath}`,
+                        Uri: /^rtsp:\/\//i.test(rawPath || '')
+                            ? rawPath : `rtsp://${this.config.hostname}:${this.config.ports.rtsp}${cleanPath}`,
                         InvalidAfterConnect: false,
                         InvalidAfterReboot:  false,
                         Timeout:             'PT30S'
@@ -747,12 +827,38 @@ class OnvifServer {
     // HTTP request handler
     // -------------------------------------------------------------------------
     _handleRequest(request, response) {
-        let pathname;
-        try {
-            const parsed = new URL(request.url, `http://${request.headers.host || 'localhost'}`);
-            pathname = parsed.pathname;
-        } catch (_) {
-            pathname = (request.url || '/').split('?')[0];
+        const pathname = getRequestPathname(request);
+
+        if (pathname === '/snapshot.jpg' && request.method === 'GET') {
+            const profile = new URL(request.url, 'http://localhost').searchParams.get('profile');
+            const quality = profile === 'sub_stream' && this.config.lowQuality
+                ? this.config.lowQuality : this.config.highQuality;
+            if (quality.snapshot || !/^rtsp:\/\//i.test(quality.rtsp || '')) {
+                response.writeHead(404);
+                response.end();
+                return;
+            }
+            if (this.snapshotInProgress) {
+                response.writeHead(503, { 'Retry-After': '1' });
+                response.end();
+                return;
+            }
+            this.snapshotInProgress = true;
+            childProcess.execFile('ffmpeg', ['-nostdin', '-loglevel', 'error', '-rtsp_transport', 'tcp',
+                '-i', quality.rtsp, '-frames:v', '1', '-f', 'image2pipe', '-vcodec', 'mjpeg', '-'],
+            { encoding: 'buffer', timeout: 10000, maxBuffer: 10 * 1024 * 1024 },
+            (err, stdout) => {
+                this.snapshotInProgress = false;
+                if (err || !stdout || !stdout.length) {
+                    this.logger.error('Failed to generate RTSP snapshot');
+                    response.writeHead(502);
+                    response.end();
+                    return;
+                }
+                response.writeHead(200, { 'Content-Type': 'image/jpeg' });
+                response.end(stdout);
+            });
+            return;
         }
 
         if (pathname === '/snapshot.png') {
@@ -963,6 +1069,7 @@ class OnvifServer {
             xml:              this._loadWsdl(DEVICE_WSDL_PATH, '/onvif/device_service'),
             forceSoap12Headers: true
         });
+        wrapSoapHttpResponse(this.deviceService);
 
         this.mediaService = soap.listen(this.server, {
             path:             '/onvif/media_service',
@@ -970,6 +1077,7 @@ class OnvifServer {
             xml:              this._loadWsdl(MEDIA_WSDL_PATH, '/onvif/media_service'),
             forceSoap12Headers: true
         });
+        wrapSoapHttpResponse(this.mediaService);
     }
 
     // -------------------------------------------------------------------------

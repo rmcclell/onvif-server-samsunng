@@ -1,8 +1,10 @@
 'use strict';
 
+const fs = require('fs');
 const http = require('http');
 const path = require('path');
 const soap = require('soap');
+const childProcess = require('child_process');
 /**
  * ONVIF Compliance Tests
  *
@@ -18,6 +20,7 @@ const DEVICE_WSDL_PATH = path.join(__dirname, '..', 'wsdl', 'device_service.wsdl
 const MEDIA_WSDL_PATH  = path.join(__dirname, '..', 'wsdl', 'media_service.wsdl');
 const DEVICE_WSDL_CLIENT_PATH = path.relative(process.cwd(), DEVICE_WSDL_PATH);
 const MEDIA_WSDL_CLIENT_PATH  = path.relative(process.cwd(), MEDIA_WSDL_PATH);
+const SNAPSHOT_PATH = path.join(__dirname, '..', 'resources', 'snapshot.png');
 
 // ─── Mock logger ─────────────────────────────────────────────────────────────
 const noop   = () => {};
@@ -52,6 +55,23 @@ function buildConfig(overrides = {}) {
 
 function makeServer(overrides = {}) {
     return OnvifServerModule.createServer(buildConfig(overrides), logger);
+}
+
+function httpRequest(options, body) {
+    return new Promise((resolve, reject) => {
+        const req = http.request(options, res => {
+            const chunks = [];
+            res.on('data', chunk => chunks.push(chunk));
+            res.on('end', () => resolve({
+                statusCode: res.statusCode,
+                headers: res.headers,
+                body: Buffer.concat(chunks)
+            }));
+        });
+        req.on('error', reject);
+        if (body) req.write(body);
+        req.end();
+    });
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -330,6 +350,18 @@ describe('GetStreamUri', () => {
         const res = handler({ ProfileToken: 'main_stream' });
         expect(res.MediaUri.Timeout).toBeDefined();
     });
+
+    it('preserves full RTSP URLs instead of routing them through the TCP proxy', () => {
+        const direct = makeServer({
+            highQuality: { ...buildConfig().highQuality, rtsp: 'rtsp://camera.example:554/main?transport=tcp' },
+            lowQuality: { ...buildConfig().lowQuality, rtsp: 'rtsp://camera.example:554/sub' }
+        });
+        const getUri = direct.onvif.MediaService.Media.GetStreamUri;
+        expect(getUri({ ProfileToken: 'main_stream' }).MediaUri.Uri)
+            .toBe('rtsp://camera.example:554/main?transport=tcp');
+        expect(getUri({ ProfileToken: 'sub_stream' }).MediaUri.Uri)
+            .toBe('rtsp://camera.example:554/sub');
+    });
 });
 
 describe('GetSnapshotUri', () => {
@@ -349,6 +381,16 @@ describe('GetSnapshotUri', () => {
     it('has Timeout field', () => {
         const res = handler({ ProfileToken: 'main_stream' });
         expect(res.MediaUri.Timeout).toBeDefined();
+    });
+
+    it('advertises a JPEG generated from RTSP when no snapshot URL is configured', () => {
+        const direct = makeServer({
+            highQuality: { ...buildConfig().highQuality, rtsp: 'rtsp://camera.example/main', snapshot: undefined }
+        });
+        expect(direct.onvif.MediaService.Media.GetSnapshotUri({ ProfileToken: 'main_stream' }).MediaUri.Uri)
+            .toBe('http://192.168.1.100:8081/snapshot.jpg?profile=main_stream');
+        expect(handler({ ProfileToken: 'main_stream' }).MediaUri.Uri)
+            .toBe('http://192.168.1.100:8580/onvif/snapshot');
     });
 });
 
@@ -503,21 +545,120 @@ describe('Live SOAP services', () => {
         expect(wsdl).toContain('http://127.0.0.1:19081/onvif/media_service');
     });
 
-    it('serves the bundled snapshot as a valid PNG', async () => {
-        const snapshotResponse = await new Promise((resolve, reject) => {
-            http.get('http://127.0.0.1:19081/snapshot.png', res => {
-                const chunks = [];
-                res.on('data', chunk => { chunks.push(chunk); });
-                res.on('end', () => resolve({
-                    statusCode: res.statusCode,
-                    contentType: res.headers['content-type'],
-                    body: Buffer.concat(chunks)
-                }));
-            }).on('error', reject);
+    it('preserves snapshot.png bytes', async () => {
+        const expected = fs.readFileSync(SNAPSHOT_PATH);
+        const response = await httpRequest({
+            hostname: '127.0.0.1',
+            port: 19081,
+            path: '/snapshot.png',
+            method: 'GET'
         });
 
-        expect(snapshotResponse.statusCode).toBe(200);
-        expect(snapshotResponse.contentType).toBe('image/png');
-        expect(snapshotResponse.body.subarray(0, 8)).toEqual(Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]));
+        expect(response.statusCode).toBe(200);
+        expect(response.headers['content-type']).toBe('image/png');
+        expect(response.body.equals(expected)).toBe(true);
+    });
+
+    it('generates JPEG snapshots from a configured RTSP URL', async () => {
+        const image = Buffer.from([0xff, 0xd8, 0xff, 0xd9]);
+        const mock = jest.spyOn(childProcess, 'execFile').mockImplementation((_file, _args, _opts, cb) => {
+            cb(null, image);
+        });
+        const direct = makeServer({
+            hostname: '127.0.0.1',
+            ports: { server: 19082, rtsp: 19555 },
+            highQuality: { ...buildConfig().highQuality, rtsp: 'rtsp://camera.example/main', snapshot: undefined }
+        });
+        direct.startServer();
+        try {
+            const res = await httpRequest({
+                hostname: '127.0.0.1', port: 19082, path: '/snapshot.jpg?profile=main_stream', method: 'GET'
+            });
+            expect(res.statusCode).toBe(200);
+            expect(res.headers['content-type']).toBe('image/jpeg');
+            expect(res.body.equals(image)).toBe(true);
+            expect(mock).toHaveBeenCalledWith('ffmpeg',
+                expect.arrayContaining(['-i', 'rtsp://camera.example/main']),
+                expect.objectContaining({ timeout: 10000 }), expect.any(Function));
+        } finally {
+            await direct.shutdown();
+            mock.mockRestore();
+        }
+    });
+
+    it('returns a gateway error when FFmpeg cannot retrieve a frame', async () => {
+        const mock = jest.spyOn(childProcess, 'execFile').mockImplementation((_file, _args, _opts, cb) => {
+            cb(new Error('failed'), Buffer.alloc(0));
+        });
+        const direct = makeServer({
+            hostname: '127.0.0.1',
+            ports: { server: 19083, rtsp: 19555 },
+            highQuality: { ...buildConfig().highQuality, rtsp: 'rtsp://camera.example/main', snapshot: undefined }
+        });
+        direct.startServer();
+        try {
+            const res = await httpRequest({
+                hostname: '127.0.0.1', port: 19083, path: '/snapshot.jpg', method: 'GET'
+            });
+            expect(res.statusCode).toBe(502);
+        } finally {
+            await direct.shutdown();
+            mock.mockRestore();
+        }
+    });
+
+    it('limits concurrent FFmpeg snapshot processes', async () => {
+        let finish;
+        let started;
+        const running = new Promise(resolve => { started = resolve; });
+        const mock = jest.spyOn(childProcess, 'execFile').mockImplementation((_file, _args, _opts, cb) => {
+            finish = cb;
+            started();
+        });
+        const direct = makeServer({
+            hostname: '127.0.0.1',
+            ports: { server: 19084, rtsp: 19555 },
+            highQuality: { ...buildConfig().highQuality, rtsp: 'rtsp://camera.example/main', snapshot: undefined }
+        });
+        direct.startServer();
+        try {
+            const options = { hostname: '127.0.0.1', port: 19084, path: '/snapshot.jpg', method: 'GET' };
+            const first = httpRequest(options);
+            await running;
+            const second = await httpRequest(options);
+            expect(second.statusCode).toBe(503);
+            expect(mock).toHaveBeenCalledTimes(1);
+            finish(null, Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
+            expect((await first).statusCode).toBe(200);
+        } finally {
+            await direct.shutdown();
+            mock.mockRestore();
+        }
+    });
+
+    it('does not duplicate SOAP namespace declarations', async () => {
+        const requestBody = `<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:tds="http://www.onvif.org/ver10/device/wsdl">
+  <soap:Body>
+    <tds:GetSystemDateAndTime/>
+  </soap:Body>
+</soap:Envelope>`;
+        const response = await httpRequest({
+            hostname: '127.0.0.1',
+            port: 19081,
+            path: '/onvif/device_service',
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/soap+xml; charset=utf-8',
+                'Content-Length': Buffer.byteLength(requestBody)
+            }
+        }, requestBody);
+        const xml = response.body.toString('utf8');
+
+        expect(response.statusCode).toBe(200);
+        expect((xml.match(/xmlns:tds=/g) || []).length).toBe(1);
+        expect((xml.match(/xmlns:tt=/g) || []).length).toBe(1);
+        expect(xml).toContain('<tds:GetSystemDateAndTimeResponse');
+        expect(xml).toContain('<tt:SystemDateAndTime>');
     });
 });

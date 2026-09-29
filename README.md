@@ -230,6 +230,21 @@ rtsp://admin:password@192.168.1.200:554/profile5/media.smp
 
 > The username/password in the RTSP URL are for the Samsung camera's own auth (entered in the Dahua XVR during camera setup). The `onvif.yaml` config does **not** store camera credentials.
 
+### Direct RTSP URLs (Python proxy compatibility)
+
+If the DVR connects with the Python proxy but not the TCP-proxied stream, set
+`highQuality.rtsp` and (if used) `lowQuality.rtsp` to the camera's complete
+`rtsp://` URLs instead of paths. The server then advertises those URLs directly
+in `GetStreamUri`; path-only values still use the local TCP proxy. The DVR
+must be able to reach the camera and authenticate to it directly.
+
+If the camera has no HTTP snapshot endpoint, omit `highQuality.snapshot`
+(and `lowQuality.snapshot` if applicable). For direct RTSP URLs the server
+advertises `/snapshot.jpg` and generates JPEG frames using **FFmpeg**, which
+must be installed and available on the server's `PATH`. An explicitly configured
+snapshot path continues to use the existing HTTP snapshot proxy. Avoid
+embedding credentials in the YAML RTSP URL: it is returned to ONVIF clients.
+
 ---
 
 ## 8. Audio Support (optional)
