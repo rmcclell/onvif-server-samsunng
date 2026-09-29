@@ -1023,7 +1023,40 @@ class OnvifServer {
     // Start HTTP + SOAP services
     // -------------------------------------------------------------------------
     startServer() {
-        this.server = http.createServer((request, response) => this._handleRequest(request, response));
+        this.server = http.createServer((request, response) => {
+            const origWrite = response.write;
+            const origEnd   = response.end;
+            const chunks    = [];
+
+            response.write = function(chunk, encoding, callback) {
+                if (chunk) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding));
+                if (typeof callback === 'function') callback();
+                return true;
+            };
+
+            response.end = function(chunk, encoding, callback) {
+                if (chunk) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding));
+                const contentTypeHeader = response.getHeader('Content-Type') || response.getHeader('content-type') || '';
+                const contentType = Array.isArray(contentTypeHeader) ? contentTypeHeader.join(';') : String(contentTypeHeader);
+                const shouldTransform = /^(?:text\/xml|application\/xml|application\/soap\+xml)(?:\s*;|$)/i.test(contentType.trim());
+
+                if (!shouldTransform) {
+                    const body = Buffer.concat(chunks);
+                    return origEnd.call(this, body, undefined, callback);
+                }
+
+                let body = Buffer.concat(chunks).toString('utf8');
+                body = fixOnvifNamespaces(body);
+
+                try {
+                    response.setHeader('Content-Length', Buffer.byteLength(body));
+                } catch (_) {}
+
+                return origEnd.call(this, body, 'utf8', callback);
+            };
+
+            this._handleRequest(request, response);
+        });
 
         this.server.on('error', err => {
             this.logger.error(`HTTP server error: ${err.message}`);

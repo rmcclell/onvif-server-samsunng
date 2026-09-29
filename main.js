@@ -1,6 +1,6 @@
 'use strict';
 
-const tcpProxy     = require('node-tcp-proxy');
+const net          = require('net');
 const onvifServer  = require('./src/onvif-server');
 const configBuilder = require('./src/config-builder');
 const pkg          = require('./package.json');
@@ -26,6 +26,87 @@ if (!args) process.exit(1);
 
 const logger = simpleLogger.createSimpleLogger();
 if (args.debug) logger.setLevel('trace');
+
+function createTcpProxyServer(localPort, remoteHost, remotePort, logger, debugEnabled) {
+    const connections = new Set();
+
+    const destroySocket = (socket) => {
+        if (!socket || socket.destroyed) return;
+        socket.destroy();
+    };
+
+    const server = net.createServer({ allowHalfOpen: true }, clientSocket => {
+        const client = clientSocket.remoteAddress ? `${clientSocket.remoteAddress}:${clientSocket.remotePort}` : 'client';
+        const upstreamSocket = net.connect({ host: remoteHost, port: remotePort });
+
+        connections.add(clientSocket);
+        connections.add(upstreamSocket);
+
+        clientSocket.setKeepAlive(true, 15000);
+        clientSocket.setNoDelay(true);
+        upstreamSocket.setKeepAlive(true, 15000);
+        upstreamSocket.setNoDelay(true);
+
+        if (debugEnabled) {
+            logger.debug(`TCP proxy :${localPort} → ${remoteHost}:${remotePort} | Client connected: ${client}`);
+        }
+
+        upstreamSocket.on('connect', () => {
+            clientSocket.pipe(upstreamSocket);
+            upstreamSocket.pipe(clientSocket);
+        });
+
+        const removeSocket = (socket) => {
+            connections.delete(socket);
+        };
+
+        const closePair = () => {
+            connections.delete(clientSocket);
+            connections.delete(upstreamSocket);
+            destroySocket(clientSocket);
+            destroySocket(upstreamSocket);
+        };
+
+        clientSocket.on('error', err => {
+            logger.error(`TCP proxy :${localPort} client error: ${err.message}`);
+            closePair();
+        });
+
+        upstreamSocket.on('error', err => {
+            logger.error(`TCP proxy :${localPort} upstream error (${remoteHost}:${remotePort}): ${err.message}`);
+            closePair();
+        });
+
+        clientSocket.on('close', () => {
+            if (debugEnabled) {
+                logger.debug(`TCP proxy :${localPort} → ${remoteHost}:${remotePort} | Client disconnected: ${client}`);
+            }
+            removeSocket(clientSocket);
+        });
+
+        upstreamSocket.on('close', () => {
+            removeSocket(upstreamSocket);
+        });
+    });
+
+    server.on('error', err => {
+        logger.error(`TCP proxy :${localPort} server error: ${err.message}`);
+    });
+
+    server.listen(localPort, () => {
+        try {
+            server.keepAliveTimeout = 0;
+        } catch (_) {}
+    });
+
+    server.shutdown = () => {
+        for (const socket of connections) destroySocket(socket);
+        connections.clear();
+        server.close();
+    };
+
+    return server;
+}
 
 function exitWithError(msg) {
     logger.error(msg);
@@ -143,16 +224,7 @@ if (args.create_config) {
     for (const dest in proxies) {
         for (const srcPort in proxies[dest]) {
             logger.info(`Starting TCP proxy :${srcPort} → ${dest}:${proxies[dest][srcPort]} ...`);
-            const proxy = tcpProxy.createProxy(srcPort, dest, proxies[dest][srcPort]);
-            if (args.debug && proxy && typeof proxy.on === 'function') {
-                proxy.on('connection', socket => {
-                    const client = socket.remoteAddress ? `${socket.remoteAddress}:${socket.remotePort}` : 'client';
-                    logger.debug(`TCP proxy :${srcPort} → ${dest}:${proxies[dest][srcPort]} | Client connected: ${client}`);
-                    socket.on('close', () => {
-                        logger.debug(`TCP proxy :${srcPort} → ${dest}:${proxies[dest][srcPort]} | Client disconnected: ${client}`);
-                    });
-                });
-            }
+            const proxy = createTcpProxyServer(Number(srcPort), dest, proxies[dest][srcPort], logger, args.debug);
             proxyServers.push(proxy);
             logger.info('  Started!');
             logger.info('');
@@ -164,7 +236,7 @@ if (args.create_config) {
         logger.info(`\nReceived ${signal}, shutting down...`);
 
         for (const proxy of proxyServers) {
-            try { proxy.end(); } catch (_) {}
+            try { proxy.shutdown(); } catch (_) {}
         }
 
         await Promise.all(servers.map(s => s.shutdown()));
