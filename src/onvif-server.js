@@ -8,6 +8,7 @@ const uuid  = require('node-uuid');
 const fs    = require('fs');
 const os    = require('os');
 const path  = require('path');
+const childProcess = require('child_process');
 const { URL } = require('url');
 
 // ---------------------------------------------------------------------------
@@ -194,6 +195,7 @@ class OnvifServer {
 
         // --- PR #26 additions ---
         this.snapshotCache       = null;
+        this.snapshotInProgress  = false;
         this.debugListenersAdded = false;
         this.xmlParser           = new xml2js.Parser({ tagNameProcessors: [xml2js.processors.stripPrefix] });
 
@@ -766,6 +768,8 @@ class OnvifServer {
             GetSnapshotUri: (args) => {
                 const profileToken = args && args.ProfileToken;
                 let uri = `http://${this.config.hostname}:${this.config.ports.server}/snapshot.png`;
+                const quality = profileToken === 'sub_stream' && this.config.lowQuality
+                    ? this.config.lowQuality : this.config.highQuality;
 
                 const extractCleanPath = (p) => {
                     if (!p) return '';
@@ -778,10 +782,10 @@ class OnvifServer {
                     return p.startsWith('/') ? p : '/' + p;
                 };
 
-                if (profileToken === 'sub_stream' && this.config.lowQuality && this.config.lowQuality.snapshot) {
-                    uri = `http://${this.config.hostname}:${this.config.ports.snapshot}${extractCleanPath(this.config.lowQuality.snapshot)}`;
-                } else if (this.config.highQuality && this.config.highQuality.snapshot) {
-                    uri = `http://${this.config.hostname}:${this.config.ports.snapshot}${extractCleanPath(this.config.highQuality.snapshot)}`;
+                if (quality.snapshot && this.config.ports.snapshot) {
+                    uri = `http://${this.config.hostname}:${this.config.ports.snapshot}${extractCleanPath(quality.snapshot)}`;
+                } else if (/^rtsp:\/\//i.test(quality.rtsp || '')) {
+                    uri = `http://${this.config.hostname}:${this.config.ports.server}/snapshot.jpg?profile=${profileToken === 'sub_stream' ? 'sub_stream' : 'main_stream'}`;
                 }
 
                 return {
@@ -802,21 +806,14 @@ class OnvifServer {
                 }
 
                 let cleanPath = rawPath || '';
-                if (cleanPath.includes('://')) {
-                    try {
-                        cleanPath = new URL(cleanPath).pathname;
-                    } catch (_) {
-                        const idx = cleanPath.indexOf('/', cleanPath.indexOf('//') + 2);
-                        cleanPath = idx > -1 ? cleanPath.substring(idx) : cleanPath;
-                    }
-                }
                 if (cleanPath && !cleanPath.startsWith('/')) {
                     cleanPath = '/' + cleanPath;
                 }
 
                 return {
                     MediaUri: {
-                        Uri: `rtsp://${this.config.hostname}:${this.config.ports.rtsp}${cleanPath}`,
+                        Uri: /^rtsp:\/\//i.test(rawPath || '')
+                            ? rawPath : `rtsp://${this.config.hostname}:${this.config.ports.rtsp}${cleanPath}`,
                         InvalidAfterConnect: false,
                         InvalidAfterReboot:  false,
                         Timeout:             'PT30S'
@@ -831,6 +828,38 @@ class OnvifServer {
     // -------------------------------------------------------------------------
     _handleRequest(request, response) {
         const pathname = getRequestPathname(request);
+
+        if (pathname === '/snapshot.jpg' && request.method === 'GET') {
+            const profile = new URL(request.url, 'http://localhost').searchParams.get('profile');
+            const quality = profile === 'sub_stream' && this.config.lowQuality
+                ? this.config.lowQuality : this.config.highQuality;
+            if (quality.snapshot || !/^rtsp:\/\//i.test(quality.rtsp || '')) {
+                response.writeHead(404);
+                response.end();
+                return;
+            }
+            if (this.snapshotInProgress) {
+                response.writeHead(503, { 'Retry-After': '1' });
+                response.end();
+                return;
+            }
+            this.snapshotInProgress = true;
+            childProcess.execFile('ffmpeg', ['-nostdin', '-loglevel', 'error', '-rtsp_transport', 'tcp',
+                '-i', quality.rtsp, '-frames:v', '1', '-f', 'image2pipe', '-vcodec', 'mjpeg', '-'],
+            { encoding: 'buffer', timeout: 10000, maxBuffer: 10 * 1024 * 1024 },
+            (err, stdout) => {
+                this.snapshotInProgress = false;
+                if (err || !stdout || !stdout.length) {
+                    this.logger.error('Failed to generate RTSP snapshot');
+                    response.writeHead(502);
+                    response.end();
+                    return;
+                }
+                response.writeHead(200, { 'Content-Type': 'image/jpeg' });
+                response.end(stdout);
+            });
+            return;
+        }
 
         if (pathname === '/snapshot.png') {
             // Cache snapshot image to avoid repeated disk I/O (PR #26)
