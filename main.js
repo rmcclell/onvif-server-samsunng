@@ -1,8 +1,8 @@
 'use strict';
 
-const net          = require('net');
 const onvifServer  = require('./src/onvif-server');
 const configBuilder = require('./src/config-builder');
+const { createTcpProxyServer } = require('./src/tcp-proxy');
 const pkg          = require('./package.json');
 const argparse     = require('argparse');
 const readline     = require('readline');
@@ -26,87 +26,6 @@ if (!args) process.exit(1);
 
 const logger = simpleLogger.createSimpleLogger();
 if (args.debug) logger.setLevel('trace');
-
-function createTcpProxyServer(localPort, remoteHost, remotePort, logger, debugEnabled) {
-    const connections = new Set();
-
-    const destroySocket = (socket) => {
-        if (!socket || socket.destroyed) return;
-        socket.destroy();
-    };
-
-    const server = net.createServer({ allowHalfOpen: true }, clientSocket => {
-        const client = clientSocket.remoteAddress ? `${clientSocket.remoteAddress}:${clientSocket.remotePort}` : 'client';
-        const upstreamSocket = net.connect({ host: remoteHost, port: remotePort });
-
-        connections.add(clientSocket);
-        connections.add(upstreamSocket);
-
-        clientSocket.setKeepAlive(true, 15000);
-        clientSocket.setNoDelay(true);
-        upstreamSocket.setKeepAlive(true, 15000);
-        upstreamSocket.setNoDelay(true);
-
-        if (debugEnabled) {
-            logger.debug(`TCP proxy :${localPort} → ${remoteHost}:${remotePort} | Client connected: ${client}`);
-        }
-
-        upstreamSocket.on('connect', () => {
-            clientSocket.pipe(upstreamSocket);
-            upstreamSocket.pipe(clientSocket);
-        });
-
-        const removeSocket = (socket) => {
-            connections.delete(socket);
-        };
-
-        const closePair = () => {
-            connections.delete(clientSocket);
-            connections.delete(upstreamSocket);
-            destroySocket(clientSocket);
-            destroySocket(upstreamSocket);
-        };
-
-        clientSocket.on('error', err => {
-            logger.error(`TCP proxy :${localPort} client error: ${err.message}`);
-            closePair();
-        });
-
-        upstreamSocket.on('error', err => {
-            logger.error(`TCP proxy :${localPort} upstream error (${remoteHost}:${remotePort}): ${err.message}`);
-            closePair();
-        });
-
-        clientSocket.on('close', () => {
-            if (debugEnabled) {
-                logger.debug(`TCP proxy :${localPort} → ${remoteHost}:${remotePort} | Client disconnected: ${client}`);
-            }
-            removeSocket(clientSocket);
-        });
-
-        upstreamSocket.on('close', () => {
-            removeSocket(upstreamSocket);
-        });
-    });
-
-    server.on('error', err => {
-        logger.error(`TCP proxy :${localPort} server error: ${err.message}`);
-    });
-
-    server.listen(localPort, () => {
-        try {
-            server.keepAliveTimeout = 0;
-        } catch (_) {}
-    });
-
-    server.shutdown = () => {
-        for (const socket of connections) destroySocket(socket);
-        connections.clear();
-        server.close();
-    };
-
-    return server;
-}
 
 function exitWithError(msg) {
     logger.error(msg);
@@ -183,7 +102,7 @@ if (args.create_config) {
     // Track instances for graceful shutdown (PR #26)
     const servers      = [];
     const proxyServers = [];
-    const proxies      = {};
+    const proxies      = new Map();
 
     for (const onvifConfig of config.onvif) {
         const server = onvifServer.createServer(onvifConfig, logger);
@@ -211,24 +130,36 @@ if (args.create_config) {
         logger.info('');
 
         // Collect TCP proxy mappings
-        if (!proxies[onvifConfig.target.hostname])
-            proxies[onvifConfig.target.hostname] = {};
-
         if (onvifConfig.ports.rtsp && onvifConfig.target.ports && onvifConfig.target.ports.rtsp)
-            proxies[onvifConfig.target.hostname][onvifConfig.ports.rtsp] = onvifConfig.target.ports.rtsp;
+            proxies.set(`${onvifConfig.hostname}:${onvifConfig.ports.rtsp}`, {
+                localHost: onvifConfig.hostname,
+                localPort: onvifConfig.ports.rtsp,
+                remoteHost: onvifConfig.target.hostname,
+                remotePort: onvifConfig.target.ports.rtsp
+            });
 
         if (onvifConfig.ports.snapshot && onvifConfig.target.ports && onvifConfig.target.ports.snapshot)
-            proxies[onvifConfig.target.hostname][onvifConfig.ports.snapshot] = onvifConfig.target.ports.snapshot;
+            proxies.set(`${onvifConfig.hostname}:${onvifConfig.ports.snapshot}`, {
+                localHost: onvifConfig.hostname,
+                localPort: onvifConfig.ports.snapshot,
+                remoteHost: onvifConfig.target.hostname,
+                remotePort: onvifConfig.target.ports.snapshot
+            });
     }
 
-    for (const dest in proxies) {
-        for (const srcPort in proxies[dest]) {
-            logger.info(`Starting TCP proxy :${srcPort} → ${dest}:${proxies[dest][srcPort]} ...`);
-            const proxy = createTcpProxyServer(Number(srcPort), dest, proxies[dest][srcPort], logger, args.debug);
-            proxyServers.push(proxy);
-            logger.info('  Started!');
-            logger.info('');
-        }
+    for (const proxyConfig of proxies.values()) {
+        logger.info(`Starting TCP proxy ${proxyConfig.localHost}:${proxyConfig.localPort} → ${proxyConfig.remoteHost}:${proxyConfig.remotePort} ...`);
+        const proxy = createTcpProxyServer(
+            proxyConfig.localHost,
+            Number(proxyConfig.localPort),
+            proxyConfig.remoteHost,
+            proxyConfig.remotePort,
+            logger,
+            args.debug
+        );
+        proxyServers.push(proxy);
+        logger.info('  Started!');
+        logger.info('');
     }
 
     // ─── Graceful shutdown (PR #26) ──────────────────────────────────────────
