@@ -2,6 +2,59 @@
 
 const net = require('net');
 
+function createRtspAuthMonitor(logger, description) {
+    const authenticatedRequests = new Set();
+    let clientBuffer = '';
+    let upstreamBuffer = '';
+    let complete = false;
+
+    const readHeaders = (buffer, chunk, callback) => {
+        buffer += chunk.toString('latin1');
+        if (buffer.length > 65536) buffer = '';
+
+        let boundary;
+        while ((boundary = buffer.indexOf('\r\n\r\n')) !== -1) {
+            callback(buffer.substring(0, boundary));
+            buffer = buffer.substring(boundary + 4);
+            if (buffer.charCodeAt(0) === 0x24) {
+                buffer = '';
+                break;
+            }
+        }
+        return buffer;
+    };
+
+    return {
+        inspectClient(chunk) {
+            if (complete) return;
+            clientBuffer = readHeaders(clientBuffer, chunk, headers => {
+                if (!/^[A-Z_]+\s+rtsp:\/\//i.test(headers)) return;
+                const cseq = (headers.match(/^CSeq:\s*(\d+)/mi) || [])[1];
+                if (cseq && /^Authorization:\s*\S+/mi.test(headers)) {
+                    authenticatedRequests.add(cseq);
+                }
+            });
+        },
+        inspectUpstream(chunk) {
+            if (complete) return;
+            upstreamBuffer = readHeaders(upstreamBuffer, chunk, headers => {
+                const status = (headers.match(/^RTSP\/\d\.\d\s+(\d{3})/i) || [])[1];
+                const cseq = (headers.match(/^CSeq:\s*(\d+)/mi) || [])[1];
+                if (!status) return;
+
+                if (status === '401') {
+                    logger.debug(`${description} | RTSP authentication failed (401${cseq ? `, CSeq ${cseq}` : ''})`);
+                    if (cseq) authenticatedRequests.delete(cseq);
+                } else if (cseq && authenticatedRequests.has(cseq) && /^2\d\d$/.test(status)) {
+                    logger.debug(`${description} | RTSP authentication successful (${status}, CSeq ${cseq})`);
+                    authenticatedRequests.delete(cseq);
+                    complete = true;
+                }
+            });
+        }
+    };
+}
+
 function createTcpProxyServer(localHost, localPort, remoteHost, remotePort, logger, debugEnabled) {
     const connections = new Set();
 
@@ -27,6 +80,14 @@ function createTcpProxyServer(localHost, localPort, remoteHost, remotePort, logg
         }
 
         upstreamSocket.on('connect', () => {
+            if (debugEnabled) {
+                const monitor = createRtspAuthMonitor(
+                    logger,
+                    `TCP proxy ${localHost}:${localPort} → ${remoteHost}:${remotePort} | Client ${client}`
+                );
+                clientSocket.on('data', chunk => monitor.inspectClient(chunk));
+                upstreamSocket.on('data', chunk => monitor.inspectUpstream(chunk));
+            }
             clientSocket.pipe(upstreamSocket);
             upstreamSocket.pipe(clientSocket);
         });
@@ -83,4 +144,4 @@ function createTcpProxyServer(localHost, localPort, remoteHost, remotePort, logg
     return server;
 }
 
-module.exports = { createTcpProxyServer };
+module.exports = { createRtspAuthMonitor, createTcpProxyServer };
