@@ -4,6 +4,7 @@ const fs = require('fs');
 const http = require('http');
 const path = require('path');
 const soap = require('soap');
+const childProcess = require('child_process');
 /**
  * ONVIF Compliance Tests
  *
@@ -349,6 +350,18 @@ describe('GetStreamUri', () => {
         const res = handler({ ProfileToken: 'main_stream' });
         expect(res.MediaUri.Timeout).toBeDefined();
     });
+
+    it('preserves full RTSP URLs instead of routing them through the TCP proxy', () => {
+        const direct = makeServer({
+            highQuality: { ...buildConfig().highQuality, rtsp: 'rtsp://camera.example:554/main?transport=tcp' },
+            lowQuality: { ...buildConfig().lowQuality, rtsp: 'rtsp://camera.example:554/sub' }
+        });
+        const getUri = direct.onvif.MediaService.Media.GetStreamUri;
+        expect(getUri({ ProfileToken: 'main_stream' }).MediaUri.Uri)
+            .toBe('rtsp://camera.example:554/main?transport=tcp');
+        expect(getUri({ ProfileToken: 'sub_stream' }).MediaUri.Uri)
+            .toBe('rtsp://camera.example:554/sub');
+    });
 });
 
 describe('GetSnapshotUri', () => {
@@ -368,6 +381,16 @@ describe('GetSnapshotUri', () => {
     it('has Timeout field', () => {
         const res = handler({ ProfileToken: 'main_stream' });
         expect(res.MediaUri.Timeout).toBeDefined();
+    });
+
+    it('advertises a JPEG generated from RTSP when no snapshot URL is configured', () => {
+        const direct = makeServer({
+            highQuality: { ...buildConfig().highQuality, rtsp: 'rtsp://camera.example/main', snapshot: undefined }
+        });
+        expect(direct.onvif.MediaService.Media.GetSnapshotUri({ ProfileToken: 'main_stream' }).MediaUri.Uri)
+            .toBe('http://192.168.1.100:8081/snapshot.jpg?profile=main_stream');
+        expect(handler({ ProfileToken: 'main_stream' }).MediaUri.Uri)
+            .toBe('http://192.168.1.100:8580/onvif/snapshot');
     });
 });
 
@@ -534,6 +557,33 @@ describe('Live SOAP services', () => {
         expect(response.statusCode).toBe(200);
         expect(response.headers['content-type']).toBe('image/png');
         expect(response.body.equals(expected)).toBe(true);
+    });
+
+    it('generates JPEG snapshots from a configured RTSP URL', async () => {
+        const image = Buffer.from([0xff, 0xd8, 0xff, 0xd9]);
+        const mock = jest.spyOn(childProcess, 'execFile').mockImplementation((_file, _args, _opts, cb) => {
+            cb(null, image);
+        });
+        const direct = makeServer({
+            hostname: '127.0.0.1',
+            ports: { server: 19082, rtsp: 19555 },
+            highQuality: { ...buildConfig().highQuality, rtsp: 'rtsp://camera.example/main', snapshot: undefined }
+        });
+        direct.startServer();
+        try {
+            const res = await httpRequest({
+                hostname: '127.0.0.1', port: 19082, path: '/snapshot.jpg?profile=main_stream', method: 'GET'
+            });
+            expect(res.statusCode).toBe(200);
+            expect(res.headers['content-type']).toBe('image/jpeg');
+            expect(res.body.equals(image)).toBe(true);
+            expect(mock).toHaveBeenCalledWith('ffmpeg',
+                expect.arrayContaining(['-i', 'rtsp://camera.example/main']),
+                expect.objectContaining({ timeout: 10000 }), expect.any(Function));
+        } finally {
+            await direct.shutdown();
+            mock.mockRestore();
+        }
     });
 
     it('does not duplicate SOAP namespace declarations', async () => {
