@@ -133,10 +133,10 @@ function createTcpProxyServer(localHost, localPort, remoteHost, remotePort, logg
 
         upstreamSocket.on('close', () => {
             removeSocket(upstreamSocket);
-            if (!clientSocket.destroyed) {
-                clientSocket.end();
-                clientSocket.once('finish', () => destroySocket(clientSocket));
-            }
+            if (clientSocket.destroyed) return;
+            if (clientSocket.writableFinished) return destroySocket(clientSocket);
+            if (!clientSocket.writableEnded) clientSocket.end();
+            clientSocket.once('finish', () => destroySocket(clientSocket));
         });
     });
 
