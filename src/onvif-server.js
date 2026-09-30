@@ -953,12 +953,14 @@ class OnvifServer {
         request.on('data', chunk => chunks.push(chunk));
         request.on('end', () => {
             if (!this.ptzTarget) {
+                this.logger.warn('PtzService: request received before passthrough initialization');
                 response.writeHead(502, { 'Content-Type': 'text/plain' });
                 response.end('PTZ passthrough not initialised\n');
                 return;
             }
 
             let body = Buffer.concat(chunks).toString('utf8');
+            this.logger.debug(`PtzService: relaying ${body.length} request bytes to ${this.ptzTarget.hostname}:${this.ptzTarget.port}${this.ptzTarget.path}`);
 
             // Rewrite virtual profile tokens → real camera profile token
             if (this.realPtzProfileToken) {
@@ -978,7 +980,7 @@ class OnvifServer {
                     'Content-Length': Buffer.byteLength(body)
                 }
             }, relayResponse => {
-                this.logger.debug(`PtzService: relayed → ${relayResponse.statusCode}`);
+                this.logger.debug(`PtzService: upstream response ${relayResponse.statusCode}`);
                 response.writeHead(relayResponse.statusCode, {
                     'Content-Type': relayResponse.headers['content-type'] || 'application/soap+xml; charset=utf-8'
                 });
@@ -1213,7 +1215,7 @@ class OnvifServer {
         });
 
         this.discoverySocket.on('message', (message, remote) => {
-            this.logger.debug(`Discovery: probe from ${remote.address}:${remote.port}`);
+            this.logger.debug(`Discovery: ${message.length} bytes from ${remote.address}:${remote.port}`);
 
             // PR #26: reuse the parser instance
             this.xmlParser.parseString(message.toString(), (err, result) => {
@@ -1235,6 +1237,7 @@ class OnvifServer {
                     if (typeof probeType === 'object') probeType = probeType._;
                 } catch (_) { probeType = ''; }
 
+                this.logger.debug(`Discovery: parsed Probe MessageID=${probeUuid || '(missing)'}, Types=${probeType || '(any)'}`);
                 if (probeType === '' || probeType.indexOf('NetworkVideoTransmitter') > -1) {
                     const msgNo   = this.discoveryMessageNo++;
                     const xmlResp = this._buildDiscoveryResponse(probeUuid, msgNo);
@@ -1243,7 +1246,10 @@ class OnvifServer {
                     // PR #26: reuse socket, no ephemeral socket per response
                     this.discoverySocket.send(buf, 0, buf.length, remote.port, remote.address, sendErr => {
                         if (sendErr) this.logger.error(`Discovery send error: ${sendErr.message}`);
+                        else this.logger.debug(`Discovery: sent ProbeMatch to ${remote.address}:${remote.port} (${buf.length} bytes, MessageNumber ${msgNo})`);
                     });
+                } else {
+                    this.logger.debug(`Discovery: ignored unsupported probe type '${probeType}'`);
                 }
             });
         });
