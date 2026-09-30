@@ -78,12 +78,39 @@ if (args.create_config) {
 
 // ─── Run with config file ─────────────────────────────────────────────────────
 } else if (args.config) {
+    runWithConfig(args.config).catch(err => exitWithError(`Startup failed: ${err.message || err}`));
+
+} else {
+    parser.print_help();
+    exitWithError('Please specify a config file, or use --create-config.');
+}
+
+// ─── Startup with a config file ──────────────────────────────────────────────
+function describeListenError(err, address) {
+    switch (err.code) {
+        case 'EADDRINUSE':
+            return `${address} is already in use. Another instance of this server (or another ` +
+                'program) is already listening there. Stop it first (for example with ' +
+                "'systemctl stop onvif-server', 'pkill -f \"node main.js\"', or check the owner " +
+                "with 'ss -lptn') or change the port in the config.";
+        case 'EADDRNOTAVAIL':
+            return `${address} is not available on this host. Make sure the configured address ` +
+                'exists on one of this machine\'s interfaces.';
+        case 'EACCES':
+            return `${address} cannot be bound: permission denied. Ports below 1024 require ` +
+                'elevated privileges (or CAP_NET_BIND_SERVICE).';
+        default:
+            return `${address}: ${err.message}`;
+    }
+}
+
+async function runWithConfig(configPath) {
     let configData;
     try {
-        configData = fs.readFileSync(args.config, 'utf8');
+        configData = fs.readFileSync(configPath, 'utf8');
     } catch (err) {
         if (err.code === 'ENOENT') {
-            return exitWithError(`File not found: ${args.config}`);
+            return exitWithError(`File not found: ${configPath}`);
         }
         throw err;
     }
@@ -104,16 +131,36 @@ if (args.create_config) {
     const proxyServers = [];
     const proxies      = new Map();
 
+    const stopAll = async () => {
+        for (const proxy of proxyServers) {
+            try { proxy.shutdown(); } catch (_) {}
+        }
+        await Promise.all(servers.map(s => s.shutdown().catch(() => {})));
+    };
+
+    const failStartup = async (msg) => {
+        await stopAll();
+        exitWithError(msg);
+    };
+
     for (const onvifConfig of config.onvif) {
         const server = onvifServer.createServer(onvifConfig, logger);
 
         if (!server.getHostname()) {
-            return exitWithError(`Cannot resolve hostname for '${onvifConfig.name}'. ` +
+            return failStartup(`Cannot resolve hostname for '${onvifConfig.name}'. ` +
                 'Set "hostname:" directly in config (MAC lookup failed or mac omitted).');
         }
 
         logger.info(`Starting ONVIF server for '${onvifConfig.name}' on ${server.getHostname()}:${onvifConfig.ports.server} ...`);
-        server.startServer();
+        servers.push(server);
+
+        try {
+            await server.startServer();
+        } catch (err) {
+            return failStartup(`Failed to start ONVIF server for '${onvifConfig.name}': ` +
+                describeListenError(err, `${server.getHostname()}:${onvifConfig.ports.server}`));
+        }
+
         server.startDiscovery();
 
         if (args.debug) server.enableDebugOutput();
@@ -125,7 +172,6 @@ if (args.create_config) {
                 .catch(err  => logger.error(`  PTZ setup failed for '${onvifConfig.name}': ${err.message || err}`));
         }
 
-        servers.push(server);
         logger.info('  Started!');
         logger.info('');
 
@@ -158,6 +204,14 @@ if (args.create_config) {
             args.debug
         );
         proxyServers.push(proxy);
+
+        try {
+            await proxy.whenListening;
+        } catch (err) {
+            return failStartup('Failed to start TCP proxy: ' +
+                describeListenError(err, `${proxyConfig.localHost}:${proxyConfig.localPort}`));
+        }
+
         logger.info('  Started!');
         logger.info('');
     }
@@ -165,20 +219,11 @@ if (args.create_config) {
     // ─── Graceful shutdown (PR #26) ──────────────────────────────────────────
     const gracefulShutdown = async (signal) => {
         logger.info(`\nReceived ${signal}, shutting down...`);
-
-        for (const proxy of proxyServers) {
-            try { proxy.shutdown(); } catch (_) {}
-        }
-
-        await Promise.all(servers.map(s => s.shutdown()));
+        await stopAll();
         logger.info('All servers stopped.');
         process.exit(0);
     };
 
     process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
     process.on('SIGINT',  () => gracefulShutdown('SIGINT'));
-
-} else {
-    parser.print_help();
-    exitWithError('Please specify a config file, or use --create-config.');
 }
