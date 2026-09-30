@@ -511,6 +511,7 @@ describe('Live SOAP services', () => {
             });
 
             expect(response.statusCode).toBe(404);
+            expect(diagnosticLogs.join('\n')).toContain('[TestCamera] HTTP request: GET /not-a-route');
             expect(diagnosticLogs.join('\n')).toContain('HTTP request: GET /not-a-route');
             expect(diagnosticLogs.join('\n')).toContain('HTTP response: GET /not-a-route → 404');
             expect(diagnosticLogs.join('\n')).not.toContain('private-value');

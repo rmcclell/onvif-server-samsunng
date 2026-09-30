@@ -251,10 +251,24 @@ const SNAPSHOT_PATH    = path.join(__dirname, '..', 'resources', 'snapshot.png')
 const DEVICE_WSDL_CLIENT_PATH = path.relative(process.cwd(), DEVICE_WSDL_PATH);
 const MEDIA_WSDL_CLIENT_PATH  = path.relative(process.cwd(), MEDIA_WSDL_PATH);
 
+function createCameraLogger(logger, cameraName) {
+    const levels = ['info', 'debug', 'warn', 'error', 'trace'];
+    const scopedLogger = {};
+
+    for (const level of levels) {
+        if (typeof logger[level] === 'function') {
+            scopedLogger[level] = (message, ...args) =>
+                logger[level](`[${cameraName}] ${message}`, ...args);
+        }
+    }
+
+    return scopedLogger;
+}
+
 class OnvifServer {
     constructor(config, logger) {
         this.config = config;
-        this.logger = logger;
+        this.logger = config.name ? createCameraLogger(logger, config.name) : logger;
 
         // --- PR #26 additions ---
         this.snapshotCache       = null;
