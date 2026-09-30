@@ -194,10 +194,22 @@ function sanitizeUriForLog(uri) {
     }
 }
 
-function wrapSoapHttpResponse(soapServer) {
+function wrapSoapHttpResponse(soapServer, logger, serviceName, isDebugEnabled) {
     const origSendHttpResponse = soapServer._sendHttpResponse.bind(soapServer);
     soapServer._sendHttpResponse = (response, statusCode, result) => {
         const nextResult = typeof result === 'string' ? fixOnvifNamespaces(result) : result;
+        if (isDebugEnabled()) {
+            const operationMatch = typeof nextResult === 'string'
+                ? nextResult.match(/<(?:[\w.-]+:)?([\w.-]+Response)\b/)
+                : null;
+            const operation = operationMatch && ROOT_SOAP_RESPONSES.has(operationMatch[1])
+                ? operationMatch[1].replace(/Response$/, '') : 'SOAP Fault or unknown';
+            const profileCount = operation === 'GetProfiles'
+                ? `, ${(nextResult.match(/<(?:[\w.-]+:)?Profiles\b/g) || []).length} profiles`
+                : '';
+            const bytes = typeof nextResult === 'string' ? Buffer.byteLength(nextResult) : 0;
+            logger.debug(`${serviceName}: ${operation} response → HTTP ${statusCode} (${bytes} bytes${profileCount})`);
+        }
         return origSendHttpResponse(response, statusCode, nextResult);
     };
 }
@@ -1171,7 +1183,7 @@ class OnvifServer {
             this.logger,
             'DeviceService'
         );
-        wrapSoapHttpResponse(this.deviceService);
+        wrapSoapHttpResponse(this.deviceService, this.logger, 'DeviceService', () => this.debugLogging);
 
         this.mediaService = soap.listen(this.server, {
             path:             '/onvif/media_service',
@@ -1187,7 +1199,7 @@ class OnvifServer {
             this.logger,
             'MediaService'
         );
-        wrapSoapHttpResponse(this.mediaService);
+        wrapSoapHttpResponse(this.mediaService, this.logger, 'MediaService', () => this.debugLogging);
     }
 
     // -------------------------------------------------------------------------

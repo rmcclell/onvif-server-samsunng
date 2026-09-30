@@ -534,6 +534,39 @@ describe('Live SOAP services', () => {
             }
         });
 
+        it('logs GetProfiles response status and count without exposing profile data', async () => {
+            diagnosticLogs.length = 0;
+            const client = await soap.createClientAsync(MEDIA_WSDL_CLIENT_PATH, { forceSoap12Headers: true });
+            try {
+                client.setEndpoint('http://127.0.0.1:19085/onvif/media_service');
+                const [response] = await client.GetProfilesAsync({});
+                expect(response.Profiles).toHaveLength(2);
+                expect(diagnosticLogs.join('\n')).toMatch(/MediaService: GetProfiles response → HTTP 200 \(\d+ bytes, 2 profiles\)/);
+                expect(diagnosticLogs.join('\n')).not.toContain('SN-TEST-0001');
+            } finally {
+                if (client.httpClient && client.httpClient.agent && typeof client.httpClient.agent.destroy === 'function') {
+                    client.httpClient.agent.destroy();
+                }
+            }
+        });
+
+        it('logs SOAP faults by status without logging the fault payload', async () => {
+            diagnosticLogs.length = 0;
+            const body = '<?xml version="1.0"?>' +
+                '<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" ' +
+                'xmlns:tds="http://www.onvif.org/ver10/device/wsdl">' +
+                '<soap:Body><tds:GetUnsupportedOperation/></soap:Body></soap:Envelope>';
+            const response = await httpRequest({
+                hostname: '127.0.0.1', port: 19085, path: '/onvif/device_service',
+                method: 'POST',
+                headers: { 'Content-Type': 'application/soap+xml', 'Content-Length': Buffer.byteLength(body) }
+            }, body);
+
+            expect(response.statusCode).toBe(500);
+            expect(diagnosticLogs.join('\n')).toMatch(/DeviceService: SOAP Fault or unknown response → HTTP 500 \(\d+ bytes\)/);
+            expect(diagnosticLogs.join('\n')).not.toContain('The requested ONVIF operation is not supported.');
+        });
+
         it('redacts authentication values but retains SOAP request parameters', () => {
             diagnosticLogs.length = 0;
             server._logSoapRequest('MediaService',

@@ -176,6 +176,7 @@ node main.js --debug onvif.yaml
 ```
 
 Debug mode logs each HTTP endpoint request and response status/duration, SOAP operation and sanitized request XML, RTSP methods/statuses, snapshot generation outcomes, PTZ relay results, and WS-Discovery probes/replies. SOAP authentication values and RTSP URL credentials/query strings are not included in these diagnostics. Use the `GetProfile` token and response status in the logs to check whether the Dahua's profile request is reaching the server and which configured profile is returned.
+It also logs each SOAP response's HTTP status and byte count; `GetProfiles` includes the number of profiles returned. If the client repeats `GetProfiles` without requesting `GetStreamUri`, check for a non-200 SOAP response or an unexpected profile count. Fault bodies are not printed in response diagnostics.
 
 You should see output like:
 
