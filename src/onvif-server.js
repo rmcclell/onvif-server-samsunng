@@ -171,6 +171,16 @@ function getRequestPathname(request) {
     }
 }
 
+function sanitizeSoapXml(rawXml) {
+    if (typeof rawXml !== 'string') return '';
+
+    return rawXml
+        .replace(/(<(?:[\w.-]+:)?(?:Username|Password|Nonce|Created)\b[^>]*>)[\s\S]*?(<\/(?:[\w.-]+:)?(?:Username|Password|Nonce|Created)\s*>)/gi, '$1[REDACTED]$2')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 2000);
+}
+
 function wrapSoapHttpResponse(soapServer) {
     const origSendHttpResponse = soapServer._sendHttpResponse.bind(soapServer);
     soapServer._sendHttpResponse = (response, statusCode, result) => {
@@ -655,6 +665,9 @@ class OnvifServer {
             GetProfile: (args) => {
                 const token   = args && args.ProfileToken;
                 const profile = this.profiles.find(p => p.attributes.token === token);
+                if (this.debugLogging) {
+                    this.logger.debug(`MediaService: GetProfile token="${token || '(missing)'}" → ${profile ? 'matched' : 'not found; falling back to main_stream'}`);
+                }
                 return { Profile: profile || this.profiles[0] };
             },
 
@@ -816,6 +829,9 @@ class OnvifServer {
                     uri = `http://${this.config.hostname}:${this.config.ports.server}/snapshot.jpg?profile=${profileToken === 'sub_stream' ? 'sub_stream' : 'main_stream'}`;
                 }
 
+                if (this.debugLogging) {
+                    this.logger.debug(`MediaService: GetSnapshotUri token="${profileToken || '(missing)'}" → ${uri}`);
+                }
                 return {
                     MediaUri: {
                         Uri:                  uri,
@@ -838,10 +854,14 @@ class OnvifServer {
                     cleanPath = '/' + cleanPath;
                 }
 
+                const uri = /^rtsp:\/\//i.test(rawPath || '')
+                    ? rawPath : `rtsp://${this.config.hostname}:${this.config.ports.rtsp}${cleanPath}`;
+                if (this.debugLogging) {
+                    this.logger.debug(`MediaService: GetStreamUri token="${profileToken || '(missing)'}" → ${uri.replace(/\/\/[^/@]+:[^/@]+@/, '//[REDACTED]@')}`);
+                }
                 return {
                     MediaUri: {
-                        Uri: /^rtsp:\/\//i.test(rawPath || '')
-                            ? rawPath : `rtsp://${this.config.hostname}:${this.config.ports.rtsp}${cleanPath}`,
+                        Uri: uri,
                         InvalidAfterConnect: false,
                         InvalidAfterReboot:  false,
                         Timeout:             'PT30S'
@@ -878,8 +898,11 @@ class OnvifServer {
             (err, stdout) => {
                 this.snapshotInProgress = false;
                 if (err || !stdout || !stdout.length) {
-                    this.logger.error('Failed to generate RTSP snapshot');
-                    response.writeHead(502);
+                const details = err
+                    ? [err.code, err.signal, err.killed ? 'timed out' : null].filter(Boolean).join(', ')
+                    : 'empty FFmpeg output';
+                this.logger.error(`Failed to generate RTSP snapshot${details ? ` (${details})` : ''}`);
+                response.writeHead(502);
                     response.end();
                     return;
                 }
@@ -1052,6 +1075,23 @@ class OnvifServer {
     // -------------------------------------------------------------------------
     startServer() {
         this.server = http.createServer((request, response) => {
+            const requestStarted = Date.now();
+            const requestPath = getRequestPathname(request);
+            if (this.debugLogging) {
+                const client = request.socket.remoteAddress || 'unknown';
+                this.logger.debug(`HTTP request: ${request.method} ${requestPath} from ${client}`);
+                response.once('finish', () => {
+                    const contentLength = response.getHeader('Content-Length');
+                    this.logger.debug(`HTTP response: ${request.method} ${requestPath} → ${response.statusCode}` +
+                        `${contentLength === undefined ? '' : ` (${contentLength} bytes)`}, ${Date.now() - requestStarted}ms`);
+                });
+                response.once('close', () => {
+                    if (!response.writableFinished) {
+                        this.logger.warn(`HTTP response closed before completion: ${request.method} ${requestPath} → ${response.statusCode || 'no status'}`);
+                    }
+                });
+            }
+
             const origWrite = response.write;
             const origEnd   = response.end;
             const chunks    = [];
@@ -1143,7 +1183,9 @@ class OnvifServer {
                 authInfo = `WS-Security [User: "${username}", Type: ${passType}, Digest: ${hasPass}, Nonce: ${nonce}, Created: ${created}]`;
             }
         }
-        this.logger.debug(`${serviceName}: ${methodName.padEnd(35)} | ${authInfo}`);
+        const requestSummary = sanitizeSoapXml(rawXml);
+        this.logger.debug(`${serviceName}: ${methodName.padEnd(35)} | ${authInfo}` +
+            `${requestSummary ? ` | Request: ${requestSummary}` : ''}`);
     }
 
     enableDebugOutput() {
