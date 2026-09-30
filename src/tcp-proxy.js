@@ -135,9 +135,24 @@ function createTcpProxyServer(localHost, localPort, remoteHost, remotePort, logg
         });
     });
 
-    server.on('error', err => {
-        logger.error(`TCP proxy ${localHost}:${localPort} server error: ${err.message}`);
+    let listenSettled = false;
+    const listening = new Promise((resolve, reject) => {
+        server.once('listening', () => {
+            listenSettled = true;
+            resolve();
+        });
+        server.on('error', err => {
+            if (!listenSettled) {
+                listenSettled = true;
+                return reject(err);
+            }
+            logger.error(`TCP proxy ${localHost}:${localPort} server error: ${err.message}`);
+        });
     });
+    // Always keep a handler attached so callers that ignore the promise do not
+    // trigger an unhandled rejection.
+    listening.catch(() => {});
+    server.whenListening = listening;
 
     server.listen(localPort, localHost, () => {
         try {

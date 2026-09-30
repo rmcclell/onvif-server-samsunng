@@ -1178,9 +1178,24 @@ class OnvifServer {
             this._handleRequest(request, response);
         });
 
-        this.server.on('error', err => {
-            this.logger.error(`HTTP server error: ${err.message}`);
+        let listenSettled = false;
+        const listening = new Promise((resolve, reject) => {
+            this.server.once('listening', () => {
+                listenSettled = true;
+                resolve();
+            });
+            this.server.on('error', err => {
+                if (!listenSettled) {
+                    listenSettled = true;
+                    return reject(err);
+                }
+                this.logger.error(`HTTP server error: ${err.message}`);
+            });
         });
+        // Always keep a handler attached so callers that ignore the returned
+        // promise do not trigger an unhandled rejection.
+        listening.catch(() => {});
+
         this.server.listen(this.config.ports.server, this.config.hostname);
 
         this.deviceService = soap.listen(this.server, {
@@ -1214,6 +1229,8 @@ class OnvifServer {
             'MediaService'
         );
         wrapSoapHttpResponse(this.mediaService, this.logger, 'MediaService', () => this.debugLogging);
+
+        return listening;
     }
 
     // -------------------------------------------------------------------------
@@ -1366,7 +1383,7 @@ class OnvifServer {
 
             this.snapshotCache = null;
 
-            if (this.server) {
+            if (this.server && this.server.listening) {
                 this.server.close(err => {
                     if (err) this.logger.error(`HTTP close error: ${err.message}`);
                     done();

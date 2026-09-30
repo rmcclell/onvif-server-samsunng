@@ -324,6 +324,14 @@ PASS test/onvif-compliance.test.js
 - Try adding the camera manually in the XVR using the server's IP and port 8081.
 - Enable debug mode: `node main.js --debug onvif.yaml`
 
+### "address already in use" (EADDRINUSE) on startup
+
+The server aborts with exit code 1 when a configured address/port cannot be bound. This almost always means another instance is still running (for example a systemd service, a Docker container, or a previous run left in the background).
+
+- Find the owner of the port: `ss -lptn 'sport = :8081'`
+- Stop the other instance: `systemctl stop onvif-server` or `pkill -f "node main.js"`
+- Or change `ports.server`, `ports.rtsp` and `ports.snapshot` in the config so each camera uses unique, free ports.
+
 ### RTSP stream shows as "offline" or fails
 
 - Verify the Samsung camera RTSP path with VLC:  
