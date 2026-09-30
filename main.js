@@ -1,15 +1,32 @@
 'use strict';
 
-const onvifServer  = require('./src/onvif-server');
-const configBuilder = require('./src/config-builder');
-const { createTcpProxyServer } = require('./src/tcp-proxy');
 const pkg          = require('./package.json');
-const argparse     = require('argparse');
+for (const name of Object.keys(pkg.dependencies)) {
+    try {
+        require.resolve(name);
+    } catch (err) {
+        if (err.code !== 'MODULE_NOT_FOUND') throw err;
+        console.error(`Required npm package "${name}" is missing. Run "npm ci" in the project directory and try again.`);
+        process.exit(1);
+    }
+}
+
+let onvifServer, configBuilder, createTcpProxyServer, argparse, yaml, simpleLogger;
+try {
+    onvifServer = require('./src/onvif-server');
+    configBuilder = require('./src/config-builder');
+    ({ createTcpProxyServer } = require('./src/tcp-proxy'));
+    argparse = require('argparse');
+    yaml = require('yaml');
+    simpleLogger = require('simple-node-logger-se');
+} catch (err) {
+    if (err.code !== 'MODULE_NOT_FOUND' && err.code !== 'ERR_DLOPEN_FAILED') throw err;
+    console.error(`Failed to load a required dependency: ${err.message}\nRun "npm ci" in the project directory and try again.`);
+    process.exit(1);
+}
 const readline     = require('readline');
 const stream       = require('stream');
-const yaml         = require('yaml');
 const fs           = require('fs');
-const simpleLogger = require('simple-node-logger-se');
 
 const parser = new argparse.ArgumentParser({
     description: 'Virtual ONVIF Server for Samsung cameras with Dahua DVR'

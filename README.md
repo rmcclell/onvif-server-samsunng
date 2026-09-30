@@ -332,6 +332,12 @@ The server aborts with exit code 1 when a configured address/port cannot be boun
 - Stop the other instance: `systemctl stop onvif-server` or `pkill -f "node main.js"`
 - Or change `ports.server`, `ports.rtsp` and `ports.snapshot` in the config so each camera uses unique, free ports.
 
+### npm fails with an ICU error on Alpine
+
+If even `node -e "console.log(Intl.DateTimeFormat().resolvedOptions())"` fails, the issue is with the Node/ICU installation, not the server. On Alpine with Node 24 and `icu-data-en`, install `icu-data-full` (`apk add --no-cache icu-data-full`), verify that Node command succeeds, then run `npm ci` again. A native Node crash during npm installation cannot be caught by the server.
+
+If the server reports a missing npm package, run `npm ci` in the project directory. For direct RTSP URLs without a snapshot path, generated snapshots require FFmpeg on `PATH`; install `ffmpeg` if snapshot requests report it missing.
+
 ### RTSP stream shows as "offline" or fails
 
 - Verify the Samsung camera RTSP path with VLC:  

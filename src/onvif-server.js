@@ -940,7 +940,9 @@ class OnvifServer {
                 const details = err
                     ? [err.code, err.signal, err.killed ? 'timed out' : null].filter(Boolean).join(', ')
                     : 'empty FFmpeg output';
-                this.logger.error(`Failed to generate RTSP snapshot${details ? ` (${details})` : ''}`);
+                this.logger.error(err && err.code === 'ENOENT'
+                    ? 'Failed to generate RTSP snapshot: FFmpeg is not installed or is not on PATH. Install ffmpeg to use generated snapshots.'
+                    : `Failed to generate RTSP snapshot${details ? ` (${details})` : ''}`);
                 response.writeHead(502);
                     response.end();
                     return;

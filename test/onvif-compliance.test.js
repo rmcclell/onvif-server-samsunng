@@ -725,6 +725,31 @@ describe('Live SOAP services', () => {
         }
     });
 
+    it('explains when FFmpeg is missing', async () => {
+        const error = Object.assign(new Error('spawn ffmpeg ENOENT'), { code: 'ENOENT' });
+        const mock = jest.spyOn(childProcess, 'execFile').mockImplementation((_file, _args, _opts, cb) => {
+            cb(error, Buffer.alloc(0));
+        });
+        const log = jest.spyOn(logger, 'error');
+        const direct = makeServer({
+            hostname: '127.0.0.1',
+            ports: { server: 19085, rtsp: 19555 },
+            highQuality: { ...buildConfig().highQuality, rtsp: 'rtsp://camera.example/main', snapshot: undefined }
+        });
+        await direct.startServer();
+        try {
+            const res = await httpRequest({
+                hostname: '127.0.0.1', port: 19085, path: '/snapshot.jpg', method: 'GET'
+            });
+            expect(res.statusCode).toBe(502);
+            expect(log).toHaveBeenCalledWith(expect.stringContaining('Install ffmpeg'));
+        } finally {
+            await direct.shutdown();
+            mock.mockRestore();
+            log.mockRestore();
+        }
+    });
+
     it('limits concurrent FFmpeg snapshot processes', async () => {
         let finish;
         let started;
