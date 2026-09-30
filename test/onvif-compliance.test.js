@@ -544,6 +544,24 @@ describe('Live SOAP services', () => {
             expect(diagnosticLogs.join('\n')).toContain('<ProfileToken>main_stream</ProfileToken>');
             expect(diagnosticLogs.join('\n')).toContain('<Password>[REDACTED]</Password>');
             expect(diagnosticLogs.join('\n')).not.toContain('example-password');
+            expect(diagnosticLogs.join('\n')).not.toContain('admin');
+        });
+
+        it('redacts RTSP URL credentials and query values from URI diagnostics', () => {
+            const rtspUri = `rtsp:${'//'}admin:private-password@camera.example/stream?token=private-token`;
+            const direct = OnvifServerModule.createServer(buildConfig({
+                highQuality: { ...buildConfig().highQuality, rtsp: rtspUri }
+            }), diagnosticLogger);
+            direct.debugLogging = true;
+            diagnosticLogs.length = 0;
+
+            const response = direct.onvif.MediaService.Media.GetStreamUri({ ProfileToken: 'main_stream' });
+
+            expect(response.MediaUri.Uri).toBe(rtspUri);
+            expect(diagnosticLogs.join('\n')).toContain('rtsp://camera.example/stream');
+            expect(diagnosticLogs.join('\n')).not.toContain('private-password');
+            expect(diagnosticLogs.join('\n')).not.toContain('private-token');
+            expect(diagnosticLogs.join('\n')).not.toContain('admin');
         });
     });
 

@@ -7,7 +7,6 @@ function createRtspAuthMonitor(logger, description) {
     const pendingRequests = new Map();
     let clientBuffer = '';
     let upstreamBuffer = '';
-    let complete = false;
 
     const readHeaders = (buffer, chunk, callback) => {
         buffer += chunk.toString('latin1');
@@ -27,7 +26,6 @@ function createRtspAuthMonitor(logger, description) {
 
     return {
         inspectClient(chunk) {
-            if (complete) return;
             clientBuffer = readHeaders(clientBuffer, chunk, headers => {
                 const requestLine = headers.match(/^([A-Z_]+)\s+(\S+)/i);
                 if (!requestLine) return;
@@ -45,7 +43,6 @@ function createRtspAuthMonitor(logger, description) {
             });
         },
         inspectUpstream(chunk) {
-            if (complete) return;
             upstreamBuffer = readHeaders(upstreamBuffer, chunk, headers => {
                 const status = (headers.match(/^RTSP\/\d\.\d\s+(\d{3})/i) || [])[1];
                 const cseq = (headers.match(/^CSeq:\s*(\d+)/mi) || [])[1];
@@ -61,7 +58,6 @@ function createRtspAuthMonitor(logger, description) {
                 } else if (cseq && authenticatedRequests.has(cseq) && /^2\d\d$/.test(status)) {
                     logger.debug(`${description} | RTSP authentication successful (${status}, CSeq ${cseq})`);
                     authenticatedRequests.delete(cseq);
-                    complete = true;
                 }
             });
         }

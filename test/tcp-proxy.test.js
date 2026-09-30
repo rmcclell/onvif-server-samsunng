@@ -74,9 +74,19 @@ describe('TCP proxy address binding', () => {
                 'Authorization: Digest username="viewer", response="secret"\r\n\r\n'
             ));
             monitor.inspectUpstream(Buffer.from('RTSP/1.0 200 OK\r\nCSeq: 3\r\n\r\n'));
+            monitor.inspectClient(Buffer.from(
+                'SETUP rtsp://camera/stream/trackID=1 RTSP/1.0\r\nCSeq: 4\r\n\r\n'
+            ));
+            monitor.inspectUpstream(Buffer.from('RTSP/1.0 200 OK\r\nCSeq: 4\r\n\r\n'));
 
             expect(logger.debug).toHaveBeenCalledWith(
                 'proxy connection | RTSP authentication successful (200, CSeq 3)'
+            );
+            expect(logger.debug).toHaveBeenCalledWith(
+                'proxy connection | RTSP request SETUP /stream/trackID=1 (CSeq 4)'
+            );
+            expect(logger.debug).toHaveBeenCalledWith(
+                'proxy connection | RTSP response 200 (CSeq 4) for SETUP /stream/trackID=1'
             );
             expect(logger.debug.mock.calls.flat().join(' ')).not.toContain('viewer');
             expect(logger.debug.mock.calls.flat().join(' ')).not.toContain('secret');
