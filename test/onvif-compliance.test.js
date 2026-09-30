@@ -817,7 +817,7 @@ describe('Live SOAP services', () => {
             ['<trt:Profiles token="main_stream"', '</trt:Profiles>', '<tt:Name>MainStream</tt:Name>', '<tt:VideoEncoderConfiguration'], ['<tt:Profiles']],
         ['/onvif/media_service', 'trt', 'http://www.onvif.org/ver10/media/wsdl', 'GetStreamUri',
             ['<trt:MediaUri>', '<tt:Uri>'], ['<tt:MediaUri>']]
-    ])('qualifies response children of %s %s with the service namespace', async (endpoint, prefix, namespace, operation, expected, unexpected) => {
+    ])('qualifies response children of %s (prefix %s, ns %s, op %s)', async (endpoint, prefix, namespace, operation, expected, unexpected) => {
         const requestBody = `<?xml version="1.0" encoding="utf-8"?>
 <soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:${prefix}="${namespace}">
   <soap:Body>
