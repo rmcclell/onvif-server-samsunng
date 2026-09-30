@@ -802,7 +802,43 @@ describe('Live SOAP services', () => {
         expect((xml.match(/xmlns:tds=/g) || []).length).toBe(1);
         expect((xml.match(/xmlns:tt=/g) || []).length).toBe(1);
         expect(xml).toContain('<tds:GetSystemDateAndTimeResponse');
-        expect(xml).toContain('<tt:SystemDateAndTime>');
+        expect(xml).toContain('<tds:SystemDateAndTime>');
+        expect(xml).toContain('<tt:DateTimeType>');
+    });
+
+    it.each([
+        ['/onvif/device_service', 'tds', 'http://www.onvif.org/ver10/device/wsdl', 'GetCapabilities',
+            ['<tds:Capabilities>', '<tt:Device>', '<tt:Media>'], ['<tt:Capabilities>']],
+        ['/onvif/device_service', 'tds', 'http://www.onvif.org/ver10/device/wsdl', 'GetServices',
+            ['<tds:Service>', '<tds:Namespace>', '<tds:XAddr>', '<tds:Version>', '<tt:Major>'], ['<tt:Service>', '<tt:XAddr>']],
+        ['/onvif/device_service', 'tds', 'http://www.onvif.org/ver10/device/wsdl', 'GetDeviceInformation',
+            ['<tds:Manufacturer>', '<tds:Model>'], ['<tt:Manufacturer>']],
+        ['/onvif/media_service', 'trt', 'http://www.onvif.org/ver10/media/wsdl', 'GetProfiles',
+            ['<trt:Profiles token="main_stream"', '</trt:Profiles>', '<tt:Name>MainStream</tt:Name>', '<tt:VideoEncoderConfiguration'], ['<tt:Profiles']],
+        ['/onvif/media_service', 'trt', 'http://www.onvif.org/ver10/media/wsdl', 'GetStreamUri',
+            ['<trt:MediaUri>', '<tt:Uri>'], ['<tt:MediaUri>']]
+    ])('qualifies response children of %s %s with the service namespace', async (endpoint, prefix, namespace, operation, expected, unexpected) => {
+        const requestBody = `<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:${prefix}="${namespace}">
+  <soap:Body>
+    <${prefix}:${operation}/>
+  </soap:Body>
+</soap:Envelope>`;
+        const response = await httpRequest({
+            hostname: '127.0.0.1',
+            port: 19081,
+            path: endpoint,
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/soap+xml; charset=utf-8',
+                'Content-Length': Buffer.byteLength(requestBody)
+            }
+        }, requestBody);
+        const xml = response.body.toString('utf8');
+
+        expect(response.statusCode).toBe(200);
+        for (const fragment of expected) expect(xml).toContain(fragment);
+        for (const fragment of unexpected) expect(xml).not.toContain(fragment);
     });
 
     it.each([

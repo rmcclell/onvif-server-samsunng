@@ -159,7 +159,39 @@ function fixOnvifNamespaces(body) {
         return `<${slash}tt:${tag}`;
     });
 
-    return normalizeDefaultOnvifTags(body);
+    return qualifyResponseChildren(normalizeDefaultOnvifTags(body));
+}
+
+// Direct children of ONVIF response elements (and of tds:Service) belong to the
+// service namespace (trt:/tds:), not tt:. Strict gSOAP clients such as Dahua
+// ignore e.g. <tt:Profiles> inside <trt:GetProfilesResponse> and see no profiles.
+const TDS_SERVICE_CHILDREN = new Set(['Namespace', 'XAddr', 'Capabilities', 'Version']);
+
+function qualifyResponseChildren(body) {
+    const stack = [];
+
+    return body.replace(/<(\/?)(?:([\w.-]+):)?([\w.-]+)([^>]*)>/g, (match, slash, tagPrefix, tag, suffix) => {
+        if (slash === '/') {
+            const open = stack.pop();
+            return open && open.rewritten ? `</${open.prefix}:${tag}>` : match;
+        }
+
+        const parent = stack.length > 0 ? stack[stack.length - 1] : null;
+        let prefix = tagPrefix;
+        if (tagPrefix === 'tt' && parent) {
+            if (ROOT_SOAP_RESPONSES.has(parent.tag) && (parent.prefix === 'trt' || parent.prefix === 'tds')) {
+                prefix = parent.prefix;
+            } else if (parent.prefix === 'tds' && parent.tag === 'Service' && TDS_SERVICE_CHILDREN.has(tag)) {
+                prefix = 'tds';
+            }
+        }
+
+        const rewritten = prefix !== tagPrefix;
+        if (!/\/\s*$/.test(suffix)) {
+            stack.push({ prefix, tag, rewritten });
+        }
+        return rewritten ? `<${prefix}:${tag}${suffix}>` : match;
+    });
 }
 
 function getRequestPathname(request) {
