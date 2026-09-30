@@ -130,4 +130,58 @@ describe('TCP proxy address binding', () => {
         await expect(connect('127.0.0.1', proxyPort, 'first')).resolves.toBe('first');
         await expect(connect('::1', proxyPort, 'second')).resolves.toBe('second');
     });
+
+    it('closes the upstream connection when the client disconnects', async () => {
+        let resolveUpstreamConnected;
+        let resolveUpstreamClosed;
+        const upstreamConnected = new Promise(resolve => { resolveUpstreamConnected = resolve; });
+        const upstreamClosed = new Promise(resolve => { resolveUpstreamClosed = resolve; });
+        const upstream = net.createServer(socket => {
+            socket.once('close', resolveUpstreamClosed);
+            resolveUpstreamConnected();
+        });
+        servers.push(upstream);
+        const upstreamPort = await listen(upstream, 0, '127.0.0.1');
+
+        const proxy = createTcpProxyServer('127.0.0.1', 0, '127.0.0.1', upstreamPort, logger, false);
+        await new Promise((resolve, reject) => {
+            proxy.once('listening', resolve);
+            proxy.once('error', reject);
+        });
+        servers.push(proxy);
+
+        const client = net.connect({ host: '127.0.0.1', port: proxy.address().port });
+        await new Promise((resolve, reject) => {
+            client.once('connect', resolve);
+            client.once('error', reject);
+        });
+        await upstreamConnected;
+
+        client.destroy();
+        await upstreamClosed;
+    });
+
+    it('closes the client connection when the upstream disconnects', async () => {
+        const upstream = net.createServer(socket => {
+            socket.once('data', () => socket.end('response'));
+        });
+        servers.push(upstream);
+        const upstreamPort = await listen(upstream, 0, '127.0.0.1');
+
+        const proxy = createTcpProxyServer('127.0.0.1', 0, '127.0.0.1', upstreamPort, logger, false);
+        await new Promise((resolve, reject) => {
+            proxy.once('listening', resolve);
+            proxy.once('error', reject);
+        });
+        servers.push(proxy);
+
+        const client = net.connect({ host: '127.0.0.1', port: proxy.address().port });
+        let response = '';
+        client.on('data', data => { response += data.toString(); });
+        const clientClosed = new Promise(resolve => client.once('close', resolve));
+        client.write('request');
+
+        await clientClosed;
+        expect(response).toBe('response');
+    });
 });
