@@ -175,7 +175,7 @@ node main.js onvif.yaml
 node main.js --debug onvif.yaml
 ```
 
-Debug mode logs each HTTP endpoint request and response status/duration, SOAP operation and sanitized request XML, RTSP methods/statuses, snapshot generation outcomes, PTZ relay results, and WS-Discovery probes/replies. SOAP authentication values and RTSP URL credentials/query strings are not included in these diagnostics. Use the `GetProfile` token and response status in the logs to check whether the Dahua's profile request is reaching the server and which configured profile is returned.
+Debug mode logs each HTTP endpoint request and response status/duration, SOAP operation and sanitized request XML, RTSP methods/statuses, snapshot generation outcomes, PTZ relay results, and WS-Discovery probes/replies. ONVIF server logs are prefixed with the configured camera name to distinguish multiple cameras. SOAP authentication values and RTSP URL credentials/query strings are not included in these diagnostics. Use the `GetProfile` token and response status in the logs to check whether the Dahua's profile request is reaching the server and which configured profile is returned.
 
 You should see output like:
 
