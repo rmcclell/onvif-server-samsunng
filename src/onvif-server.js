@@ -179,6 +179,34 @@ function wrapSoapHttpResponse(soapServer) {
     };
 }
 
+function wrapSoapRequestValidation(soapServer, handlers, logger, serviceName) {
+    const supportedOperations = new Set(Object.keys(handlers));
+    const origXmlToObject = soapServer.wsdl.xmlToObject.bind(soapServer.wsdl);
+
+    soapServer.wsdl.xmlToObject = (xml, ...args) => {
+        const bodyMatch = typeof xml === 'string'
+            ? xml.match(/<(?:[\w.-]+:)?Body\b[^>]*>\s*<(?:[\w.-]+:)?([\w.-]+)\b/i)
+            : null;
+        const operation = bodyMatch && bodyMatch[1];
+
+        if (operation && operation !== 'Fault' && !supportedOperations.has(operation)) {
+            logger.warn(`${serviceName}: unsupported SOAP operation '${operation}'`);
+            throw {
+                Fault: {
+                    Code: {
+                        Value: 'soap:Sender',
+                        Subcode: { Value: 'ter:ActionNotSupported' }
+                    },
+                    Reason: { Text: 'The requested ONVIF operation is not supported.' },
+                    statusCode: 500
+                }
+            };
+        }
+
+        return origXmlToObject(xml, ...args);
+    };
+}
+
 // ---------------------------------------------------------------------------
 // Main class
 // ---------------------------------------------------------------------------
@@ -1067,16 +1095,30 @@ class OnvifServer {
             path:             '/onvif/device_service',
             services:         this.onvif,
             xml:              this._loadWsdl(DEVICE_WSDL_PATH, '/onvif/device_service'),
-            forceSoap12Headers: true
+            forceSoap12Headers: true,
+            suppressStack:     true
         });
+        wrapSoapRequestValidation(
+            this.deviceService,
+            this.onvif.DeviceService.Device,
+            this.logger,
+            'DeviceService'
+        );
         wrapSoapHttpResponse(this.deviceService);
 
         this.mediaService = soap.listen(this.server, {
             path:             '/onvif/media_service',
             services:         this.onvif,
             xml:              this._loadWsdl(MEDIA_WSDL_PATH, '/onvif/media_service'),
-            forceSoap12Headers: true
+            forceSoap12Headers: true,
+            suppressStack:     true
         });
+        wrapSoapRequestValidation(
+            this.mediaService,
+            this.onvif.MediaService.Media,
+            this.logger,
+            'MediaService'
+        );
         wrapSoapHttpResponse(this.mediaService);
     }
 
