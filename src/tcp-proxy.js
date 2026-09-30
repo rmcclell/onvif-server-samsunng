@@ -128,10 +128,15 @@ function createTcpProxyServer(localHost, localPort, remoteHost, remotePort, logg
                 logger.debug(`TCP proxy ${localHost}:${localPort} → ${remoteHost}:${remotePort} | Client disconnected: ${client}`);
             }
             removeSocket(clientSocket);
+            destroySocket(upstreamSocket);
         });
 
         upstreamSocket.on('close', () => {
             removeSocket(upstreamSocket);
+            if (clientSocket.destroyed) return;
+            if (clientSocket.writableFinished) return destroySocket(clientSocket);
+            if (!clientSocket.writableEnded) clientSocket.end();
+            clientSocket.once('finish', () => destroySocket(clientSocket));
         });
     });
 
