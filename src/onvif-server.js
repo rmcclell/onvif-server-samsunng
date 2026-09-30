@@ -208,7 +208,7 @@ function wrapSoapHttpResponse(soapServer, logger, serviceName, isDebugEnabled) {
                 ? `, ${(nextResult.match(/<(?:[\w.-]+:)?Profiles\b/g) || []).length} profiles`
                 : '';
             const bytes = typeof nextResult === 'string' ? Buffer.byteLength(nextResult) : 0;
-            logger.debug(`${serviceName}: ${operation} response → HTTP ${statusCode} (${bytes} bytes${profileCount})`);
+            logger.debug(`${serviceName}: ${operation} response → HTTP ${statusCode || response.statusCode} (${bytes} bytes${profileCount})`);
         }
         return origSendHttpResponse(response, statusCode, nextResult);
     };
