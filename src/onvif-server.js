@@ -171,6 +171,29 @@ function getRequestPathname(request) {
     }
 }
 
+function sanitizeSoapXml(rawXml) {
+    if (typeof rawXml !== 'string') return '';
+
+    return rawXml
+        .replace(/(<(?:[\w.-]+:)?(?:Username|Password|Nonce|Created)\b[^>]*>)[\s\S]*?(<\/(?:[\w.-]+:)?(?:Username|Password|Nonce|Created)\s*>)/gi, '$1[REDACTED]$2')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 2000);
+}
+
+function sanitizeUriForLog(uri) {
+    try {
+        const parsed = new URL(uri);
+        parsed.username = '';
+        parsed.password = '';
+        parsed.search = '';
+        parsed.hash = '';
+        return `${parsed.protocol}//${parsed.host}${parsed.pathname}`;
+    } catch (_) {
+        return String(uri).replace(/[?#].*$/, '').replace(/\/\/[^/@]+@/, '//[REDACTED]@');
+    }
+}
+
 function wrapSoapHttpResponse(soapServer) {
     const origSendHttpResponse = soapServer._sendHttpResponse.bind(soapServer);
     soapServer._sendHttpResponse = (response, statusCode, result) => {
@@ -655,6 +678,9 @@ class OnvifServer {
             GetProfile: (args) => {
                 const token   = args && args.ProfileToken;
                 const profile = this.profiles.find(p => p.attributes.token === token);
+                if (this.debugLogging) {
+                    this.logger.debug(`MediaService: GetProfile token="${token || '(missing)'}" → ${profile ? 'matched' : 'not found; falling back to main_stream'}`);
+                }
                 return { Profile: profile || this.profiles[0] };
             },
 
@@ -816,6 +842,9 @@ class OnvifServer {
                     uri = `http://${this.config.hostname}:${this.config.ports.server}/snapshot.jpg?profile=${profileToken === 'sub_stream' ? 'sub_stream' : 'main_stream'}`;
                 }
 
+                if (this.debugLogging) {
+                    this.logger.debug(`MediaService: GetSnapshotUri token="${profileToken || '(missing)'}" → ${sanitizeUriForLog(uri)}`);
+                }
                 return {
                     MediaUri: {
                         Uri:                  uri,
@@ -838,10 +867,14 @@ class OnvifServer {
                     cleanPath = '/' + cleanPath;
                 }
 
+                const uri = /^rtsp:\/\//i.test(rawPath || '')
+                    ? rawPath : `rtsp://${this.config.hostname}:${this.config.ports.rtsp}${cleanPath}`;
+                if (this.debugLogging) {
+                    this.logger.debug(`MediaService: GetStreamUri token="${profileToken || '(missing)'}" → ${sanitizeUriForLog(uri)}`);
+                }
                 return {
                     MediaUri: {
-                        Uri: /^rtsp:\/\//i.test(rawPath || '')
-                            ? rawPath : `rtsp://${this.config.hostname}:${this.config.ports.rtsp}${cleanPath}`,
+                        Uri: uri,
                         InvalidAfterConnect: false,
                         InvalidAfterReboot:  false,
                         Timeout:             'PT30S'
@@ -878,8 +911,11 @@ class OnvifServer {
             (err, stdout) => {
                 this.snapshotInProgress = false;
                 if (err || !stdout || !stdout.length) {
-                    this.logger.error('Failed to generate RTSP snapshot');
-                    response.writeHead(502);
+                const details = err
+                    ? [err.code, err.signal, err.killed ? 'timed out' : null].filter(Boolean).join(', ')
+                    : 'empty FFmpeg output';
+                this.logger.error(`Failed to generate RTSP snapshot${details ? ` (${details})` : ''}`);
+                response.writeHead(502);
                     response.end();
                     return;
                 }
@@ -930,12 +966,14 @@ class OnvifServer {
         request.on('data', chunk => chunks.push(chunk));
         request.on('end', () => {
             if (!this.ptzTarget) {
+                this.logger.warn('PtzService: request received before passthrough initialization');
                 response.writeHead(502, { 'Content-Type': 'text/plain' });
                 response.end('PTZ passthrough not initialised\n');
                 return;
             }
 
             let body = Buffer.concat(chunks).toString('utf8');
+            this.logger.debug(`PtzService: relaying ${body.length} request bytes to ${this.ptzTarget.hostname}:${this.ptzTarget.port}${this.ptzTarget.path}`);
 
             // Rewrite virtual profile tokens → real camera profile token
             if (this.realPtzProfileToken) {
@@ -955,7 +993,7 @@ class OnvifServer {
                     'Content-Length': Buffer.byteLength(body)
                 }
             }, relayResponse => {
-                this.logger.debug(`PtzService: relayed → ${relayResponse.statusCode}`);
+                this.logger.debug(`PtzService: upstream response ${relayResponse.statusCode}`);
                 response.writeHead(relayResponse.statusCode, {
                     'Content-Type': relayResponse.headers['content-type'] || 'application/soap+xml; charset=utf-8'
                 });
@@ -1047,11 +1085,39 @@ class OnvifServer {
             .replace(/(<soap12:address location=")[^"]+(")/, `$1${serviceUrl}$2`);
     }
 
+    _logHttpRequest(request, response) {
+        if (!this.debugLogging) return;
+        const requestStarted = Date.now();
+        const requestPath = getRequestPathname(request);
+        const client = request.socket.remoteAddress || 'unknown';
+        this.logger.debug(`HTTP request: ${request.method} ${requestPath} from ${client}`);
+        response.once('finish', () => {
+            const contentLength = response.getHeader('Content-Length');
+            this.logger.debug(`HTTP response: ${request.method} ${requestPath} → ${response.statusCode}` +
+                `${contentLength === undefined ? '' : ` (${contentLength} bytes)`}, ${Date.now() - requestStarted}ms`);
+        });
+        response.once('close', () => {
+            if (!response.writableFinished) {
+                this.logger.warn(`HTTP response closed before completion: ${request.method} ${requestPath} → ${response.statusCode || 'no status'}`);
+            }
+        });
+    }
+
+    _wrapSoapHttpDiagnostics(soapServer) {
+        const origRequestListener = soapServer._requestListener.bind(soapServer);
+        soapServer._requestListener = (request, response) => {
+            this._logHttpRequest(request, response);
+            return origRequestListener(request, response);
+        };
+    }
+
     // -------------------------------------------------------------------------
     // Start HTTP + SOAP services
     // -------------------------------------------------------------------------
     startServer() {
         this.server = http.createServer((request, response) => {
+            this._logHttpRequest(request, response);
+
             const origWrite = response.write;
             const origEnd   = response.end;
             const chunks    = [];
@@ -1098,6 +1164,7 @@ class OnvifServer {
             forceSoap12Headers: true,
             suppressStack:     true
         });
+        this._wrapSoapHttpDiagnostics(this.deviceService);
         wrapSoapRequestValidation(
             this.deviceService,
             this.onvif.DeviceService.Device,
@@ -1113,6 +1180,7 @@ class OnvifServer {
             forceSoap12Headers: true,
             suppressStack:     true
         });
+        this._wrapSoapHttpDiagnostics(this.mediaService);
         wrapSoapRequestValidation(
             this.mediaService,
             this.onvif.MediaService.Media,
@@ -1134,16 +1202,15 @@ class OnvifServer {
             const nonceMatch   = rawXml.match(/<[^:]*:?Nonce[^>]*>([^<]+)<\/[^:]*:?Nonce>/i);
 
             if (userMatch) {
-                const username = userMatch[1];
                 const typeAttr = passMatch && passMatch[1] ? (passMatch[1].match(/Type="([^"]+)"/i) || [])[1] : '';
                 const passType = typeAttr ? typeAttr.split('#').pop() : 'PasswordDigest';
                 const hasPass  = passMatch && passMatch[2] ? 'Yes' : 'No';
-                const created  = createdMatch ? createdMatch[1] : 'n/a';
-                const nonce    = nonceMatch ? `${nonceMatch[1].substring(0, 8)}...` : 'n/a';
-                authInfo = `WS-Security [User: "${username}", Type: ${passType}, Digest: ${hasPass}, Nonce: ${nonce}, Created: ${created}]`;
+                authInfo = `WS-Security [Username: present, Type: ${passType}, Digest: ${hasPass}, Nonce: ${nonceMatch ? 'present' : 'missing'}, Created: ${createdMatch ? 'present' : 'missing'}]`;
             }
         }
-        this.logger.debug(`${serviceName}: ${methodName.padEnd(35)} | ${authInfo}`);
+        const requestSummary = sanitizeSoapXml(rawXml);
+        this.logger.debug(`${serviceName}: ${methodName.padEnd(35)} | ${authInfo}` +
+            `${requestSummary ? ` | Request: ${requestSummary}` : ''}`);
     }
 
     enableDebugOutput() {
@@ -1171,7 +1238,7 @@ class OnvifServer {
         });
 
         this.discoverySocket.on('message', (message, remote) => {
-            this.logger.debug(`Discovery: probe from ${remote.address}:${remote.port}`);
+            this.logger.debug(`Discovery: ${message.length} bytes from ${remote.address}:${remote.port}`);
 
             // PR #26: reuse the parser instance
             this.xmlParser.parseString(message.toString(), (err, result) => {
@@ -1193,6 +1260,7 @@ class OnvifServer {
                     if (typeof probeType === 'object') probeType = probeType._;
                 } catch (_) { probeType = ''; }
 
+                this.logger.debug(`Discovery: parsed Probe MessageID=${probeUuid || '(missing)'}, Types=${probeType || '(any)'}`);
                 if (probeType === '' || probeType.indexOf('NetworkVideoTransmitter') > -1) {
                     const msgNo   = this.discoveryMessageNo++;
                     const xmlResp = this._buildDiscoveryResponse(probeUuid, msgNo);
@@ -1201,7 +1269,10 @@ class OnvifServer {
                     // PR #26: reuse socket, no ephemeral socket per response
                     this.discoverySocket.send(buf, 0, buf.length, remote.port, remote.address, sendErr => {
                         if (sendErr) this.logger.error(`Discovery send error: ${sendErr.message}`);
+                        else this.logger.debug(`Discovery: sent ProbeMatch to ${remote.address}:${remote.port} (${buf.length} bytes, MessageNumber ${msgNo})`);
                     });
+                } else {
+                    this.logger.debug(`Discovery: ignored unsupported probe type '${probeType}'`);
                 }
             });
         });

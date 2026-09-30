@@ -4,9 +4,9 @@ const net = require('net');
 
 function createRtspAuthMonitor(logger, description) {
     const authenticatedRequests = new Set();
+    const pendingRequests = new Map();
     let clientBuffer = '';
     let upstreamBuffer = '';
-    let complete = false;
 
     const readHeaders = (buffer, chunk, callback) => {
         buffer += chunk.toString('latin1');
@@ -26,21 +26,31 @@ function createRtspAuthMonitor(logger, description) {
 
     return {
         inspectClient(chunk) {
-            if (complete) return;
             clientBuffer = readHeaders(clientBuffer, chunk, headers => {
-                if (!/^[A-Z_]+\s+rtsp:\/\//i.test(headers)) return;
+                const requestLine = headers.match(/^([A-Z_]+)\s+(\S+)/i);
+                if (!requestLine) return;
+                const method = requestLine[1];
+                let resource = requestLine[2].split('?')[0];
+                if (/^rtsp:\/\//i.test(resource)) {
+                    try { resource = new URL(resource).pathname; } catch (_) { resource = '/[invalid-URI]'; }
+                }
                 const cseq = (headers.match(/^CSeq:\s*(\d+)/mi) || [])[1];
+                logger.debug(`${description} | RTSP request ${method} ${resource}${cseq ? ` (CSeq ${cseq})` : ''}`);
+                if (cseq) pendingRequests.set(cseq, `${method} ${resource}`);
                 if (cseq && /^Authorization:\s*\S+/mi.test(headers)) {
                     authenticatedRequests.add(cseq);
                 }
             });
         },
         inspectUpstream(chunk) {
-            if (complete) return;
             upstreamBuffer = readHeaders(upstreamBuffer, chunk, headers => {
                 const status = (headers.match(/^RTSP\/\d\.\d\s+(\d{3})/i) || [])[1];
                 const cseq = (headers.match(/^CSeq:\s*(\d+)/mi) || [])[1];
                 if (!status) return;
+                const request = cseq && pendingRequests.get(cseq);
+                logger.debug(`${description} | RTSP response ${status}${cseq ? ` (CSeq ${cseq})` : ''}` +
+                    `${request ? ` for ${request}` : ''}`);
+                if (cseq) pendingRequests.delete(cseq);
 
                 if (status === '401') {
                     logger.debug(`${description} | RTSP authentication failed (401${cseq ? `, CSeq ${cseq}` : ''})`);
@@ -48,7 +58,6 @@ function createRtspAuthMonitor(logger, description) {
                 } else if (cseq && authenticatedRequests.has(cseq) && /^2\d\d$/.test(status)) {
                     logger.debug(`${description} | RTSP authentication successful (${status}, CSeq ${cseq})`);
                     authenticatedRequests.delete(cseq);
-                    complete = true;
                 }
             });
         }
@@ -81,6 +90,7 @@ function createTcpProxyServer(localHost, localPort, remoteHost, remotePort, logg
 
         upstreamSocket.on('connect', () => {
             if (debugEnabled) {
+                logger.debug(`TCP proxy ${localHost}:${localPort} → ${remoteHost}:${remotePort} | Upstream connected for ${client}`);
                 const monitor = createRtspAuthMonitor(
                     logger,
                     `TCP proxy ${localHost}:${localPort} → ${remoteHost}:${remotePort} | Client ${client}`

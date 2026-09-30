@@ -481,6 +481,90 @@ describe('Live SOAP services', () => {
         ports: { server: 19081, rtsp: 19554, snapshot: 19580 }
     });
 
+    describe('Verbose diagnostics', () => {
+        const diagnosticLogs = [];
+        const diagnosticLogger = {
+            debug: message => diagnosticLogs.push(message),
+            info: () => {},
+            warn: message => diagnosticLogs.push(message),
+            error: message => diagnosticLogs.push(message),
+            trace: () => {}
+        };
+        const server = OnvifServerModule.createServer(buildConfig({
+            hostname: '127.0.0.1',
+            ports: { server: 19085, rtsp: 19559, snapshot: 19585 }
+        }), diagnosticLogger);
+
+        beforeAll(() => {
+            server.startServer();
+            server.enableDebugOutput();
+        });
+
+        afterAll(async () => {
+            await server.shutdown();
+        });
+
+        it('logs every HTTP endpoint response without query-string values', async () => {
+            diagnosticLogs.length = 0;
+            const response = await httpRequest({
+                hostname: '127.0.0.1', port: 19085, path: '/not-a-route?token=private-value', method: 'GET'
+            });
+
+            expect(response.statusCode).toBe(404);
+            expect(diagnosticLogs.join('\n')).toContain('HTTP request: GET /not-a-route');
+            expect(diagnosticLogs.join('\n')).toContain('HTTP response: GET /not-a-route → 404');
+            expect(diagnosticLogs.join('\n')).not.toContain('private-value');
+        });
+
+        it('logs GetProfile request details and the selected fallback profile', async () => {
+            diagnosticLogs.length = 0;
+            const client = await soap.createClientAsync(MEDIA_WSDL_CLIENT_PATH, { forceSoap12Headers: true });
+
+            try {
+                client.setEndpoint('http://127.0.0.1:19085/onvif/media_service');
+                const [response] = await client.GetProfileAsync({ ProfileToken: 'not-a-profile' });
+                expect(response.Profile.attributes.token).toBe('main_stream');
+                expect(diagnosticLogs.join('\n')).toContain('GetProfile token="not-a-profile"');
+                expect(diagnosticLogs.join('\n')).toContain('falling back to main_stream');
+                expect(diagnosticLogs.join('\n')).toContain('HTTP response: POST /onvif/media_service → 200');
+            } finally {
+                if (client.httpClient && client.httpClient.agent && typeof client.httpClient.agent.destroy === 'function') {
+                    client.httpClient.agent.destroy();
+                }
+            }
+        });
+
+        it('redacts authentication values but retains SOAP request parameters', () => {
+            diagnosticLogs.length = 0;
+            server._logSoapRequest('MediaService',
+                '<Envelope><Body><GetProfile><ProfileToken>main_stream</ProfileToken>' +
+                '<Username>admin</Username><Password>example-password</Password></GetProfile></Body></Envelope>',
+                'GetProfile');
+
+            expect(diagnosticLogs.join('\n')).toContain('<ProfileToken>main_stream</ProfileToken>');
+            expect(diagnosticLogs.join('\n')).toContain('<Password>[REDACTED]</Password>');
+            expect(diagnosticLogs.join('\n')).not.toContain('example-password');
+            expect(diagnosticLogs.join('\n')).not.toContain('admin');
+        });
+
+        it('redacts RTSP URL credentials and query values from URI diagnostics', () => {
+            const rtspUri = `rtsp:${'//'}admin:private-password@camera.example/stream?token=private-token`;
+            const direct = OnvifServerModule.createServer(buildConfig({
+                highQuality: { ...buildConfig().highQuality, rtsp: rtspUri }
+            }), diagnosticLogger);
+            direct.debugLogging = true;
+            diagnosticLogs.length = 0;
+
+            const response = direct.onvif.MediaService.Media.GetStreamUri({ ProfileToken: 'main_stream' });
+
+            expect(response.MediaUri.Uri).toBe(rtspUri);
+            expect(diagnosticLogs.join('\n')).toContain('rtsp://camera.example/stream');
+            expect(diagnosticLogs.join('\n')).not.toContain('private-password');
+            expect(diagnosticLogs.join('\n')).not.toContain('private-token');
+            expect(diagnosticLogs.join('\n')).not.toContain('admin');
+        });
+    });
+
     beforeAll(() => {
         server.startServer();
     });

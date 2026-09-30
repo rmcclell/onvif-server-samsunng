@@ -17,7 +17,7 @@ const parser = new argparse.ArgumentParser({
 
 parser.add_argument('-v', '--version',       { action: 'store_true', help: 'Show version' });
 parser.add_argument('-cc', '--create-config',{ action: 'store_true', help: 'Interactively generate a config from a real ONVIF camera' });
-parser.add_argument('-d', '--debug',         { action: 'store_true', help: 'Enable SOAP request debug logging' });
+parser.add_argument('-d', '--debug',         { action: 'store_true', help: 'Enable verbose ONVIF, HTTP, RTSP, snapshot, PTZ, and discovery diagnostics' });
 parser.add_argument('config', { help: 'Path to onvif.yaml config file', nargs: '?' });
 
 const args = parser.parse_args();

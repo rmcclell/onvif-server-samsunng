@@ -46,16 +46,25 @@ describe('TCP proxy address binding', () => {
 
         it('logs failed authentication without logging credentials', () => {
             const monitor = createRtspAuthMonitor(logger, 'proxy connection');
+            const rtspTarget = `rtsp:${'//'}admin:secret@camera/stream?token=private`;
             monitor.inspectClient(Buffer.from(
-                'DESCRIBE rtsp://camera/stream RTSP/1.0\r\n' +
+                `DESCRIBE ${rtspTarget} RTSP/1.0\r\n` +
                 'CSeq: 2\r\nAuthorization: Basic secret-value\r\n\r\n'
             ));
             monitor.inspectUpstream(Buffer.from('RTSP/1.0 401 Unauthorized\r\nCSeq: 2\r\n\r\n'));
 
             expect(logger.debug).toHaveBeenCalledWith(
+                'proxy connection | RTSP request DESCRIBE /stream (CSeq 2)'
+            );
+            expect(logger.debug).toHaveBeenCalledWith(
+                'proxy connection | RTSP response 401 (CSeq 2) for DESCRIBE /stream'
+            );
+            expect(logger.debug).toHaveBeenCalledWith(
                 'proxy connection | RTSP authentication failed (401, CSeq 2)'
             );
             expect(logger.debug.mock.calls.flat().join(' ')).not.toContain('secret-value');
+            expect(logger.debug.mock.calls.flat().join(' ')).not.toContain('secret');
+            expect(logger.debug.mock.calls.flat().join(' ')).not.toContain('private');
         });
 
         it('logs successful authentication when an authorized request succeeds', () => {
@@ -65,9 +74,19 @@ describe('TCP proxy address binding', () => {
                 'Authorization: Digest username="viewer", response="secret"\r\n\r\n'
             ));
             monitor.inspectUpstream(Buffer.from('RTSP/1.0 200 OK\r\nCSeq: 3\r\n\r\n'));
+            monitor.inspectClient(Buffer.from(
+                'SETUP rtsp://camera/stream/trackID=1 RTSP/1.0\r\nCSeq: 4\r\n\r\n'
+            ));
+            monitor.inspectUpstream(Buffer.from('RTSP/1.0 200 OK\r\nCSeq: 4\r\n\r\n'));
 
             expect(logger.debug).toHaveBeenCalledWith(
                 'proxy connection | RTSP authentication successful (200, CSeq 3)'
+            );
+            expect(logger.debug).toHaveBeenCalledWith(
+                'proxy connection | RTSP request SETUP /stream/trackID=1 (CSeq 4)'
+            );
+            expect(logger.debug).toHaveBeenCalledWith(
+                'proxy connection | RTSP response 200 (CSeq 4) for SETUP /stream/trackID=1'
             );
             expect(logger.debug.mock.calls.flat().join(' ')).not.toContain('viewer');
             expect(logger.debug.mock.calls.flat().join(' ')).not.toContain('secret');
