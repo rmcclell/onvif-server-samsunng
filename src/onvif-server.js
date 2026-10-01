@@ -1200,8 +1200,9 @@ class OnvifServer {
 
         this.server.listen(this.config.ports.server, this.config.hostname);
 
+        // Also accept the bare /onvif/ base URL that clients such as ODM may be given.
         this.deviceService = soap.listen(this.server, {
-            path:             '/onvif/device_service',
+            path:             /^\/onvif\/(?:device_service\/)?$/,
             services:         this.onvif,
             xml:              this._loadWsdl(DEVICE_WSDL_PATH, '/onvif/device_service'),
             forceSoap12Headers: true,

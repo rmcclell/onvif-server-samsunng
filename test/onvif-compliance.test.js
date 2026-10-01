@@ -805,6 +805,28 @@ describe('Live SOAP services', () => {
         expect(xml).toContain('<tt:SystemDateAndTime>');
     });
 
+    it.each(['/onvif', '/onvif/'])('serves device service requests sent to the %s base URL', async (endpoint) => {
+        const requestBody = `<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:tds="http://www.onvif.org/ver10/device/wsdl">
+  <soap:Body>
+    <tds:GetSystemDateAndTime/>
+  </soap:Body>
+</soap:Envelope>`;
+        const response = await httpRequest({
+            hostname: '127.0.0.1',
+            port: 19081,
+            path: endpoint,
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/soap+xml; charset=utf-8',
+                'Content-Length': Buffer.byteLength(requestBody)
+            }
+        }, requestBody);
+
+        expect(response.statusCode).toBe(200);
+        expect(response.body.toString('utf8')).toContain('<tds:GetSystemDateAndTimeResponse');
+    });
+
     it.each([
         ['/onvif/device_service', 'tds', 'http://www.onvif.org/ver10/device/wsdl', 'GetSystemUris'],
         ['/onvif/media_service', 'trt', 'http://www.onvif.org/ver10/media/wsdl', 'GetOSDs']
