@@ -802,7 +802,36 @@ describe('Live SOAP services', () => {
         expect((xml.match(/xmlns:tds=/g) || []).length).toBe(1);
         expect((xml.match(/xmlns:tt=/g) || []).length).toBe(1);
         expect(xml).toContain('<tds:GetSystemDateAndTimeResponse');
-        expect(xml).toContain('<tt:SystemDateAndTime>');
+        expect(xml).toContain('<tds:SystemDateAndTime>');
+        expect(xml).toContain('<tt:UTCDateTime>');
+    });
+
+    it.each([
+        ['GetDeviceInformation', 'Manufacturer', 'Samsung'],
+        ['GetCapabilities', 'Capabilities', '<tt:Device>'],
+        ['GetServices', 'Service', '<tds:Namespace>'],
+        ['GetScopes', 'Scopes', '<tt:ScopeDef>']
+    ])('uses the device namespace for %s response fields', async (operation, field, content) => {
+        const requestBody = `<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" ` +
+            `xmlns:tds="http://www.onvif.org/ver10/device/wsdl"><soap:Body>` +
+            `<tds:${operation}/></soap:Body></soap:Envelope>`;
+        const response = await httpRequest({
+            hostname: '127.0.0.1',
+            port: 19081,
+            path: '/onvif/device_service',
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/soap+xml; charset=utf-8',
+                'Content-Length': Buffer.byteLength(requestBody)
+            }
+        }, requestBody);
+        const xml = response.body.toString('utf8');
+
+        expect(response.statusCode).toBe(200);
+        expect(xml).toContain(`<tds:${operation}Response>`);
+        expect(xml).toContain(`<tds:${field}>`);
+        expect(xml).toContain(content);
+        expect(xml).toContain(`</tds:${field}>`);
     });
 
     it.each(['/onvif', '/onvif/'])('serves device service requests sent to the %s base URL', async (endpoint) => {
