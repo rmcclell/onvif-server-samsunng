@@ -99,6 +99,7 @@ function stripDefaultOnvifNamespace(suffix) {
 
 function normalizeDefaultOnvifTags(body) {
     const defaultNamespaceStack = [];
+    const tagStack = [];
 
     return body.replace(/<(\/?)(?:([a-zA-Z0-9_]+):)?([a-zA-Z0-9_]+)([^>]*)>/g, (match, slash, tagPrefix, tag, suffix) => {
         const isClosingTag = slash === '/';
@@ -110,11 +111,16 @@ function normalizeDefaultOnvifTags(body) {
         const nextDefaultNamespace = defaultNamespaceMatch
             ? (defaultNamespaceMatch[1] || null)
             : currentDefaultNamespace;
+        const parent = tagStack[tagStack.length - (isClosingTag ? 2 : 1)];
+        const grandparent = tagStack[tagStack.length - (isClosingTag ? 3 : 2)];
         let nextMatch = match;
 
-        if (!tagPrefix && tag !== 'Envelope' && tag !== 'Header' && tag !== 'Body' &&
-            nextDefaultNamespace && ONVIF_DEFAULT_NAMESPACES.has(nextDefaultNamespace)) {
-            const normalizedPrefix = ROOT_SOAP_RESPONSES.has(tag) ? getSoapResponsePrefix(tag) : 'tt';
+        if ((tagPrefix === 'tds' || tagPrefix === 'trt' ||
+            (!tagPrefix && nextDefaultNamespace && ONVIF_DEFAULT_NAMESPACES.has(nextDefaultNamespace))) &&
+            tag !== 'Envelope' && tag !== 'Header' && tag !== 'Body') {
+            const normalizedPrefix = ROOT_SOAP_RESPONSES.has(tag) ? getSoapResponsePrefix(tag)
+                : parent && ROOT_SOAP_RESPONSES.has(parent) ? getSoapResponsePrefix(parent)
+                : parent === 'Service' && grandparent === 'GetServicesResponse' ? 'tds' : 'tt';
             const nextSuffix = !isClosingTag ? stripDefaultOnvifNamespace(suffix) : suffix;
             nextMatch = `<${slash}${normalizedPrefix}:${tag}${nextSuffix}>`;
         }
@@ -122,9 +128,11 @@ function normalizeDefaultOnvifTags(body) {
         if (isClosingTag) {
             if (defaultNamespaceStack.length > 0) {
                 defaultNamespaceStack.pop();
+                tagStack.pop();
             }
         } else if (!isSelfClosingTag) {
             defaultNamespaceStack.push(nextDefaultNamespace);
+            tagStack.push(tag);
         }
 
         return nextMatch;
@@ -151,13 +159,6 @@ function fixOnvifNamespaces(body) {
             `$1 ${missingNamespaces.join(' ')}$2`
         );
     }
-
-    body = body.replace(/<(\/?)(?:trt|tds):([a-zA-Z0-9_]+)(?=[>\s/])/g, (match, slash, tag) => {
-        if (ROOT_SOAP_RESPONSES.has(tag)) {
-            return `<${slash}${getSoapResponsePrefix(tag)}:${tag}`;
-        }
-        return `<${slash}tt:${tag}`;
-    });
 
     return normalizeDefaultOnvifTags(body);
 }
