@@ -324,6 +324,11 @@ PASS test/onvif-compliance.test.js
 - Try adding the camera manually in the XVR using the server's IP and port 8081.
 - Enable debug mode: `node main.js --debug onvif.yaml`
 
+### ONVIF Device Manager / other clients report "Access Error" or "no endpoint listening"
+
+- Use the ONVIF server port (`ports.server`), not the snapshot or RTSP proxy ports — those forward raw traffic to the real camera.
+- Device service URL: `http://<hostname>:<ports.server>/onvif/device_service` (the base URL `http://<hostname>:<ports.server>/onvif/` is also accepted).
+
 ### "address already in use" (EADDRINUSE) on startup
 
 The server aborts with exit code 1 when a configured address/port cannot be bound. This almost always means another instance is still running (for example a systemd service, a Docker container, or a previous run left in the background).
