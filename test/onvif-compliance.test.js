@@ -475,6 +475,41 @@ describe('Discovery response XML', () => {
     });
 });
 
+describe('Discovery interface handling', () => {
+    it('reports whether the configured hostname is a local address', () => {
+        expect(makeServer({ hostname: '127.0.0.1' }).checkHostnameIsLocal()).toBe(true);
+        expect(makeServer({ hostname: '192.0.2.123' }).checkHostnameIsLocal()).toBe(false);
+    });
+
+    it('falls back to the default interface when the hostname is not local', async () => {
+        const messages = { error: [], warn: [] };
+        const recordingLogger = {
+            ...logger,
+            error: msg => messages.error.push(msg),
+            warn:  msg => messages.warn.push(msg)
+        };
+        const server = OnvifServerModule.createServer(buildConfig({ hostname: '192.0.2.123' }), recordingLogger);
+        server.startDiscovery();
+        try {
+            await new Promise((resolve, reject) => {
+                const started = Date.now();
+                const poll = () => {
+                    if (messages.warn.length || messages.error.length >= 2) return resolve();
+                    if (Date.now() - started > 2000) return reject(new Error('discovery did not report join result'));
+                    setTimeout(poll, 10);
+                };
+                poll();
+            });
+            expect(messages.error[0]).toContain('192.0.2.123 is not assigned to any network interface');
+            if (messages.warn.length) {
+                expect(messages.warn[0]).toContain('default interface');
+            }
+        } finally {
+            await server.shutdown();
+        }
+    });
+});
+
 describe('Live SOAP services', () => {
     const server = makeServer({
         hostname: '127.0.0.1',

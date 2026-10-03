@@ -324,6 +324,14 @@ PASS test/onvif-compliance.test.js
 - Try adding the camera manually in the XVR using the server's IP and port 8081.
 - Enable debug mode: `node main.js --debug onvif.yaml`
 
+### `Discovery multicast join error: addMembership ENODEV` / no requests in the debug log
+
+`ENODEV` means the configured `hostname` is not assigned to any network interface on the host/container running the server, so ONVIF clients (ODM, ONVIF Manager, the XVR) never reach it and `--debug` shows no HTTP/SOAP activity. RTSP directly to the camera still works because it bypasses this server.
+
+- Run `ip -4 addr` inside the host/container (e.g. `pct enter <id>` on Proxmox) and check the configured `hostname` is listed. Containers using DHCP may have been given a different address after a restart.
+- Set `hostname:` to the current address, or give the container a static IP (Proxmox: container → Network → IPv4 Static).
+- The server now warns at startup when `hostname` is not local, and falls back to joining the discovery multicast group on the default interface.
+
 ### ONVIF Device Manager / other clients report "Access Error" or "no endpoint listening"
 
 - Use the ONVIF server port (`ports.server`), not the snapshot or RTSP proxy ports — those forward raw traffic to the real camera.
