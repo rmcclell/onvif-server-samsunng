@@ -7,6 +7,7 @@ const xml2js = require('xml2js');
 const uuid  = require('node-uuid');
 const fs    = require('fs');
 const os    = require('os');
+const net   = require('net');
 const path  = require('path');
 const childProcess = require('child_process');
 const { URL } = require('url');
@@ -47,6 +48,21 @@ function getIpAddressFromMac(macAddress) {
         }
     }
     return null;
+}
+
+function getLocalIpv4Addresses() {
+    const ifaces = os.networkInterfaces();
+    const addresses = [];
+    for (const name of Object.keys(ifaces)) {
+        for (const iface of ifaces[name] || []) {
+            if (iface.family === 'IPv4' || iface.family === 4) addresses.push(iface.address);
+        }
+    }
+    return addresses;
+}
+
+function isLocalIpv4Address(address) {
+    return getLocalIpv4Addresses().includes(address);
 }
 
 // ---------------------------------------------------------------------------
@@ -1327,10 +1343,34 @@ class OnvifServer {
         this.discoverySocket.bind(3702, () => {
             try {
                 this.discoverySocket.addMembership('239.255.255.250', this.config.hostname);
+                this.logger.debug(`Discovery: listening on UDP 3702, joined 239.255.255.250 on ${this.config.hostname}`);
+                return;
             } catch (err) {
-                this.logger.error(`Discovery multicast join error: ${err.message}`);
+                const reason = err.code === 'ENODEV' || err.code === 'EADDRNOTAVAIL'
+                    ? ` (${this.config.hostname} is not assigned to any network interface on this host; ` +
+                      `local IPv4 addresses: ${getLocalIpv4Addresses().join(', ') || 'none'})`
+                    : '';
+                this.logger.error(`Discovery multicast join error on ${this.config.hostname}: ${err.message}${reason}`);
+            }
+
+            try {
+                this.discoverySocket.addMembership('239.255.255.250');
+                this.logger.warn('Discovery: joined 239.255.255.250 on the default interface instead; ' +
+                    `ProbeMatch replies still advertise http://${this.config.hostname}:${this.config.ports.server}/onvif/device_service`);
+            } catch (err) {
+                this.logger.error(`Discovery multicast join error on default interface: ${err.message}. ` +
+                    'WS-Discovery is disabled; add the camera manually.');
             }
         });
+    }
+
+    // Returns false only when the configured hostname is an IPv4 literal that
+    // is not assigned to a local interface. Empty hostnames, 0.0.0.0 and
+    // non-IPv4 values cannot be checked and return true.
+    checkHostnameIsLocal() {
+        const hostname = this.config.hostname;
+        if (!hostname || !net.isIPv4(hostname) || hostname === '0.0.0.0') return true;
+        return isLocalIpv4Address(hostname);
     }
 
     // -------------------------------------------------------------------------

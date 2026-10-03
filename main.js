@@ -169,6 +169,11 @@ async function runWithConfig(configPath) {
         }
 
         logger.info(`Starting ONVIF server for '${onvifConfig.name}' on ${server.getHostname()}:${onvifConfig.ports.server} ...`);
+        if (!server.checkHostnameIsLocal()) {
+            logger.warn(`  hostname ${server.getHostname()} is not assigned to any network interface on this host ` +
+                '(it may have changed via DHCP). ONVIF clients will not reach this server. Set "hostname:" to one ' +
+                'of this host\'s addresses (see "ip -4 addr") or give the host/container a static IP.');
+        }
         servers.push(server);
 
         try {
