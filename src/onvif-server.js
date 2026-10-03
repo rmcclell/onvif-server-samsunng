@@ -7,6 +7,7 @@ const xml2js = require('xml2js');
 const uuid  = require('node-uuid');
 const fs    = require('fs');
 const os    = require('os');
+const net   = require('net');
 const path  = require('path');
 const childProcess = require('child_process');
 const { URL } = require('url');
@@ -53,8 +54,8 @@ function getLocalIpv4Addresses() {
     const ifaces = os.networkInterfaces();
     const addresses = [];
     for (const name of Object.keys(ifaces)) {
-        for (const net of ifaces[name] || []) {
-            if (net.family === 'IPv4' || net.family === 4) addresses.push(net.address);
+        for (const iface of ifaces[name] || []) {
+            if (iface.family === 'IPv4' || iface.family === 4) addresses.push(iface.address);
         }
     }
     return addresses;
@@ -1363,11 +1364,12 @@ class OnvifServer {
         });
     }
 
-    // Returns true when the configured hostname is an IPv4 address assigned
-    // to a local interface (or is not an IPv4 literal and cannot be checked).
+    // Returns false only when the configured hostname is an IPv4 literal that
+    // is not assigned to a local interface. Empty hostnames, 0.0.0.0 and
+    // non-IPv4 values cannot be checked and return true.
     checkHostnameIsLocal() {
         const hostname = this.config.hostname;
-        if (!hostname || !/^\d{1,3}(?:\.\d{1,3}){3}$/.test(hostname) || hostname === '0.0.0.0') return true;
+        if (!hostname || !net.isIPv4(hostname) || hostname === '0.0.0.0') return true;
         return isLocalIpv4Address(hostname);
     }
 

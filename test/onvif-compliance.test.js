@@ -490,20 +490,25 @@ describe('Discovery interface handling', () => {
         };
         const server = OnvifServerModule.createServer(buildConfig({ hostname: '192.0.2.123' }), recordingLogger);
         server.startDiscovery();
+        const joins = [];
+        server.discoverySocket.addMembership = (group, iface) => {
+            joins.push(iface);
+            if (iface) {
+                const err = new Error('addMembership ENODEV');
+                err.code = 'ENODEV';
+                throw err;
+            }
+        };
         try {
             await new Promise((resolve, reject) => {
-                const started = Date.now();
-                const poll = () => {
-                    if (messages.warn.length || messages.error.length >= 2) return resolve();
-                    if (Date.now() - started > 2000) return reject(new Error('discovery did not report join result'));
-                    setTimeout(poll, 10);
-                };
-                poll();
+                server.discoverySocket.once('listening', () => setImmediate(resolve));
+                server.discoverySocket.once('error', reject);
             });
+            expect(joins).toEqual(['192.0.2.123', undefined]);
+            expect(messages.error).toHaveLength(1);
             expect(messages.error[0]).toContain('192.0.2.123 is not assigned to any network interface');
-            if (messages.warn.length) {
-                expect(messages.warn[0]).toContain('default interface');
-            }
+            expect(messages.warn).toHaveLength(1);
+            expect(messages.warn[0]).toContain('default interface');
         } finally {
             await server.shutdown();
         }
