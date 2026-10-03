@@ -191,6 +191,40 @@ The Dahua XVR should discover the camera automatically within a few seconds via 
 
 > **Windows Firewall**: Allow Node.js through the firewall, or open ports 8081, 8554, 8580, and 3702/UDP manually.
 
+### Proxmox LXC (Alpine)
+
+Run the server directly in an Alpine LXC with a static IP. `hostname:` in `onvif.yaml` must be the container's own IP (`net0 ... ip=`), not the Proxmox host's.
+
+1. On the Proxmox host, give the container a static IP and restart it:
+   ```bash
+   pct set <id> -net0 name=eth0,bridge=vmbr0,ip=192.168.1.189/24,gw=192.168.1.1
+   pct reboot <id>
+   ```
+   If the container's firewall is enabled (`firewall=1`), allow TCP `ports.server`/`ports.rtsp`/`ports.snapshot` and UDP 3702 in its Proxmox firewall rules, or set `firewall=0`.
+2. Inside the container (`pct enter <id>`), make sure networking is up and starts at boot:
+   ```sh
+   rc-update add networking boot
+   rc-service networking restart
+   ip -4 addr        # must list 127.0.0.1 and the container IP
+   ```
+3. Install Node.js, FFmpeg and the server:
+   ```sh
+   apk add --no-cache nodejs npm ffmpeg git
+   git clone https://github.com/rmcclell/onvif-server-samsunng /opt/onvif-server-samsunng
+   cd /opt/onvif-server-samsunng && npm ci
+   cp onvif.yaml.example onvif.yaml   # then edit hostname/target/paths
+   ```
+4. Test in the foreground with `node main.js --debug onvif.yaml`. There should be no `ENODEV` error or "not assigned to any network interface" warning.
+5. Install the OpenRC service so it starts after networking at boot and restarts if it exits:
+   ```sh
+   cp contrib/openrc/onvif-server /etc/init.d/onvif-server
+   chmod +x /etc/init.d/onvif-server
+   rc-update add onvif-server default
+   rc-service onvif-server start
+   tail -f /var/log/onvif-server.log
+   ```
+   To change the install path, config file or enable debug logs, set `ONVIF_DIR`, `ONVIF_CONFIG` or `ONVIF_ARGS="--debug"` in `/etc/conf.d/onvif-server`, then `rc-service onvif-server restart`.
+
 ---
 
 ## 6. Docker

@@ -1,0 +1,43 @@
+#!/sbin/openrc-run
+# OpenRC service for onvif-server-samsung (Alpine Linux / Proxmox LXC)
+#
+# Install:
+#   cp contrib/openrc/onvif-server /etc/init.d/onvif-server
+#   chmod +x /etc/init.d/onvif-server
+#   rc-update add networking boot
+#   rc-update add onvif-server default
+#   rc-service onvif-server start
+#
+# Optional overrides in /etc/conf.d/onvif-server:
+#   ONVIF_DIR=/opt/onvif-server-samsunng
+#   ONVIF_CONFIG=/opt/onvif-server-samsunng/onvif.yaml
+#   ONVIF_ARGS="--debug"
+
+name="onvif-server"
+description="Virtual ONVIF server for Samsung cameras"
+
+: ${ONVIF_DIR:=/opt/onvif-server-samsunng}
+: ${ONVIF_CONFIG:=${ONVIF_DIR}/onvif.yaml}
+: ${ONVIF_ARGS:=}
+
+supervisor="supervise-daemon"
+command="/usr/bin/node"
+command_args="${ONVIF_DIR}/main.js ${ONVIF_ARGS} ${ONVIF_CONFIG}"
+directory="${ONVIF_DIR}"
+output_log="/var/log/onvif-server.log"
+error_log="/var/log/onvif-server.log"
+respawn_delay=5
+respawn_max=0
+
+depend() {
+    need net
+    after firewall
+}
+
+start_pre() {
+    checkpath --file --mode 0644 "${output_log}"
+    if [ ! -f "${ONVIF_CONFIG}" ]; then
+        eerror "Config file not found: ${ONVIF_CONFIG}"
+        return 1
+    fi
+}
