@@ -56,6 +56,16 @@
       <xs:element name="GetAudioOutputsResponse"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
       <xs:element name="GetAudioOutputConfigurations"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
       <xs:element name="GetAudioOutputConfigurationsResponse"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="GetCompatibleVideoAnalyticsConfigurations"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="GetCompatibleVideoAnalyticsConfigurationsResponse"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="GetCompatibleMetadataConfigurations"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="GetCompatibleMetadataConfigurationsResponse"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="GetOSDOptions"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="GetOSDOptionsResponse"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="GetOSDs"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="GetOSDsResponse"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="SetSynchronizationPoint"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
+      <xs:element name="SetSynchronizationPointResponse"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
       <xs:element name="GetSnapshotUri"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
       <xs:element name="GetSnapshotUriResponse"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
       <xs:element name="GetStreamUri"><xs:complexType><xs:sequence><xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xs:sequence></xs:complexType></xs:element>
@@ -110,6 +120,16 @@
   <wsdl:message name="GetAudioOutputsResponse"><wsdl:part name="parameters" element="tns:GetAudioOutputsResponse"/></wsdl:message>
   <wsdl:message name="GetAudioOutputConfigurationsRequest"><wsdl:part name="parameters" element="tns:GetAudioOutputConfigurations"/></wsdl:message>
   <wsdl:message name="GetAudioOutputConfigurationsResponse"><wsdl:part name="parameters" element="tns:GetAudioOutputConfigurationsResponse"/></wsdl:message>
+  <wsdl:message name="GetCompatibleVideoAnalyticsConfigurationsRequest"><wsdl:part name="parameters" element="tns:GetCompatibleVideoAnalyticsConfigurations"/></wsdl:message>
+  <wsdl:message name="GetCompatibleVideoAnalyticsConfigurationsResponse"><wsdl:part name="parameters" element="tns:GetCompatibleVideoAnalyticsConfigurationsResponse"/></wsdl:message>
+  <wsdl:message name="GetCompatibleMetadataConfigurationsRequest"><wsdl:part name="parameters" element="tns:GetCompatibleMetadataConfigurations"/></wsdl:message>
+  <wsdl:message name="GetCompatibleMetadataConfigurationsResponse"><wsdl:part name="parameters" element="tns:GetCompatibleMetadataConfigurationsResponse"/></wsdl:message>
+  <wsdl:message name="GetOSDOptionsRequest"><wsdl:part name="parameters" element="tns:GetOSDOptions"/></wsdl:message>
+  <wsdl:message name="GetOSDOptionsResponse"><wsdl:part name="parameters" element="tns:GetOSDOptionsResponse"/></wsdl:message>
+  <wsdl:message name="GetOSDsRequest"><wsdl:part name="parameters" element="tns:GetOSDs"/></wsdl:message>
+  <wsdl:message name="GetOSDsResponse"><wsdl:part name="parameters" element="tns:GetOSDsResponse"/></wsdl:message>
+  <wsdl:message name="SetSynchronizationPointRequest"><wsdl:part name="parameters" element="tns:SetSynchronizationPoint"/></wsdl:message>
+  <wsdl:message name="SetSynchronizationPointResponse"><wsdl:part name="parameters" element="tns:SetSynchronizationPointResponse"/></wsdl:message>
   <wsdl:message name="GetSnapshotUriRequest"><wsdl:part name="parameters" element="tns:GetSnapshotUri"/></wsdl:message>
   <wsdl:message name="GetSnapshotUriResponse"><wsdl:part name="parameters" element="tns:GetSnapshotUriResponse"/></wsdl:message>
   <wsdl:message name="GetStreamUriRequest"><wsdl:part name="parameters" element="tns:GetStreamUri"/></wsdl:message>
@@ -141,6 +161,11 @@
     <wsdl:operation name="GetAudioOutputConfigurations"><wsdl:input message="tns:GetAudioOutputConfigurationsRequest"/><wsdl:output message="tns:GetAudioOutputConfigurationsResponse"/></wsdl:operation>
     <wsdl:operation name="GetSnapshotUri"><wsdl:input message="tns:GetSnapshotUriRequest"/><wsdl:output message="tns:GetSnapshotUriResponse"/></wsdl:operation>
     <wsdl:operation name="GetStreamUri"><wsdl:input message="tns:GetStreamUriRequest"/><wsdl:output message="tns:GetStreamUriResponse"/></wsdl:operation>
+    <wsdl:operation name="GetCompatibleVideoAnalyticsConfigurations"><wsdl:input message="tns:GetCompatibleVideoAnalyticsConfigurationsRequest"/><wsdl:output message="tns:GetCompatibleVideoAnalyticsConfigurationsResponse"/></wsdl:operation>
+    <wsdl:operation name="GetCompatibleMetadataConfigurations"><wsdl:input message="tns:GetCompatibleMetadataConfigurationsRequest"/><wsdl:output message="tns:GetCompatibleMetadataConfigurationsResponse"/></wsdl:operation>
+    <wsdl:operation name="GetOSDOptions"><wsdl:input message="tns:GetOSDOptionsRequest"/><wsdl:output message="tns:GetOSDOptionsResponse"/></wsdl:operation>
+    <wsdl:operation name="GetOSDs"><wsdl:input message="tns:GetOSDsRequest"/><wsdl:output message="tns:GetOSDsResponse"/></wsdl:operation>
+    <wsdl:operation name="SetSynchronizationPoint"><wsdl:input message="tns:SetSynchronizationPointRequest"/><wsdl:output message="tns:SetSynchronizationPointResponse"/></wsdl:operation>
   </wsdl:portType>
   <wsdl:binding name="MediaBinding" type="tns:Media">
     <soap12:binding transport="http://schemas.xmlsoap.org/soap/http" style="document"/>
@@ -271,6 +296,31 @@
     </wsdl:operation>
     <wsdl:operation name="GetStreamUri">
       <soap12:operation soapAction="http://www.onvif.org/ver10/media/wsdl/GetStreamUri"/>
+      <wsdl:input><soap12:body use="literal"/></wsdl:input>
+      <wsdl:output><soap12:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="GetCompatibleVideoAnalyticsConfigurations">
+      <soap12:operation soapAction="http://www.onvif.org/ver10/media/wsdl/GetCompatibleVideoAnalyticsConfigurations"/>
+      <wsdl:input><soap12:body use="literal"/></wsdl:input>
+      <wsdl:output><soap12:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="GetCompatibleMetadataConfigurations">
+      <soap12:operation soapAction="http://www.onvif.org/ver10/media/wsdl/GetCompatibleMetadataConfigurations"/>
+      <wsdl:input><soap12:body use="literal"/></wsdl:input>
+      <wsdl:output><soap12:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="GetOSDOptions">
+      <soap12:operation soapAction="http://www.onvif.org/ver10/media/wsdl/GetOSDOptions"/>
+      <wsdl:input><soap12:body use="literal"/></wsdl:input>
+      <wsdl:output><soap12:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="GetOSDs">
+      <soap12:operation soapAction="http://www.onvif.org/ver10/media/wsdl/GetOSDs"/>
+      <wsdl:input><soap12:body use="literal"/></wsdl:input>
+      <wsdl:output><soap12:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="SetSynchronizationPoint">
+      <soap12:operation soapAction="http://www.onvif.org/ver10/media/wsdl/SetSynchronizationPoint"/>
       <wsdl:input><soap12:body use="literal"/></wsdl:input>
       <wsdl:output><soap12:body use="literal"/></wsdl:output>
     </wsdl:operation>

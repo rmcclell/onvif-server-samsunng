@@ -874,6 +874,34 @@ describe('Live SOAP services', () => {
         expect(xml).toContain(`</tds:${field}>`);
     });
 
+    it.each([
+        ['GetCompatibleVideoAnalyticsConfigurations', '<trt:ProfileToken>main_stream</trt:ProfileToken>', null],
+        ['GetCompatibleMetadataConfigurations', '<trt:ProfileToken>main_stream</trt:ProfileToken>', null],
+        ['GetOSDOptions', '<trt:ConfigurationToken>video_src_config</trt:ConfigurationToken>', '<tt:MaximumNumberOfOSDs Total="0"'],
+        ['GetOSDs', '', null],
+        ['SetSynchronizationPoint', '<trt:ProfileToken>main_stream</trt:ProfileToken>', null]
+    ])('supports media operation %s', async (operation, args, content) => {
+        const requestBody = `<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" ` +
+            `xmlns:trt="http://www.onvif.org/ver10/media/wsdl"><soap:Body>` +
+            `<trt:${operation}>${args}</trt:${operation}></soap:Body></soap:Envelope>`;
+        const response = await httpRequest({
+            hostname: '127.0.0.1',
+            port: 19081,
+            path: '/onvif/media_service',
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/soap+xml; charset=utf-8',
+                'Content-Length': Buffer.byteLength(requestBody)
+            }
+        }, requestBody);
+        const xml = response.body.toString('utf8');
+
+        expect(response.statusCode).toBe(200);
+        expect(xml).toContain(`<trt:${operation}Response`);
+        expect(xml).not.toContain('Fault');
+        if (content) expect(xml).toContain(content);
+    });
+
     it.each(['/onvif', '/onvif/'])('serves device service requests sent to the %s base URL', async (endpoint) => {
         const requestBody = `<?xml version="1.0" encoding="utf-8"?>
 <soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:tds="http://www.onvif.org/ver10/device/wsdl">
@@ -898,7 +926,7 @@ describe('Live SOAP services', () => {
 
     it.each([
         ['/onvif/device_service', 'tds', 'http://www.onvif.org/ver10/device/wsdl', 'GetSystemUris'],
-        ['/onvif/media_service', 'trt', 'http://www.onvif.org/ver10/media/wsdl', 'GetOSDs']
+        ['/onvif/media_service', 'trt', 'http://www.onvif.org/ver10/media/wsdl', 'GetAudioDecoderConfigurations']
     ])('returns an ONVIF fault for unsupported operations on %s', async (endpoint, prefix, namespace, operation) => {
         const requestBody = `<?xml version="1.0" encoding="utf-8"?>
 <soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:${prefix}="${namespace}">

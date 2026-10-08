@@ -78,6 +78,8 @@ const ROOT_SOAP_RESPONSES = new Set([
     'GetAudioEncoderConfigurationResponse', 'GetAudioEncoderConfigurationOptionsResponse', 'GetCompatibleVideoEncoderConfigurationsResponse',
     'GetCompatibleVideoSourceConfigurationsResponse', 'GetCompatibleAudioEncoderConfigurationsResponse', 'GetCompatibleAudioSourceConfigurationsResponse',
     'GetVideoAnalyticsConfigurationsResponse', 'GetMetadataConfigurationsResponse', 'GetMetadataConfigurationOptionsResponse',
+    'GetCompatibleVideoAnalyticsConfigurationsResponse', 'GetCompatibleMetadataConfigurationsResponse',
+    'GetOSDOptionsResponse', 'GetOSDsResponse', 'SetSynchronizationPointResponse',
     'GetAudioOutputsResponse', 'GetAudioOutputConfigurationsResponse', 'GetSnapshotUriResponse', 'GetStreamUriResponse',
     'GetCapabilitiesResponse', 'GetServiceCapabilitiesResponse', 'GetServicesResponse', 'GetDeviceInformationResponse',
     'GetNetworkInterfacesResponse', 'GetUsersResponse', 'GetScopesResponse', 'GetNetworkDefaultGatewayResponse',
@@ -846,12 +848,40 @@ class OnvifServer {
                 return { Configurations: [] };
             },
 
+            GetCompatibleVideoAnalyticsConfigurations: (_args) => {
+                return { Configurations: [] };
+            },
+
             GetMetadataConfigurations: (_args) => {
+                return { Configurations: [] };
+            },
+
+            GetCompatibleMetadataConfigurations: (_args) => {
                 return { Configurations: [] };
             },
 
             GetMetadataConfigurationOptions: (_args) => {
                 return { Options: {} };
+            },
+
+            // OSD is not supported by the proxied camera — advertise zero OSDs
+            GetOSDOptions: (_args) => {
+                return {
+                    OSDOptions: {
+                        MaximumNumberOfOSDs: { attributes: { Total: 0 } },
+                        Type: ['Text'],
+                        PositionOption: ['Custom']
+                    }
+                };
+            },
+
+            GetOSDs: (_args) => {
+                return {};
+            },
+
+            // No-op: keyframe requests cannot be forwarded to the camera
+            SetSynchronizationPoint: (_args) => {
+                return {};
             },
 
             GetAudioOutputs: (_args) => {
