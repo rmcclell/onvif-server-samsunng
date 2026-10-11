@@ -7,18 +7,27 @@ const collection = require('../contrib/postman/direct-camera-controls.postman_co
 const requests = collection.item.flatMap(folder => folder.item);
 const writes = collection.item[1].item;
 
-function runGuard(event, values, url = 'http://192.168.1.129/onvif/device_service', raw = '') {
+function runGuard(event, values, url = 'http://192.168.1.129/onvif/device_service', raw = '', persistent = {}) {
     const variables = new Map(Object.entries(values));
+    const stores = ['environment', 'collectionVariables', 'globals'].map(name => persistent[name] || new Map());
+    const get = key => variables.has(key) ? variables.get(key)
+        : stores.find(store => store.has(key))?.get(key);
     const pm = {
         variables: {
-            get: key => variables.get(key),
+            get,
             set: (key, value) => variables.set(key, value),
             replaceIn: value => value.replace(/\{\{([^}]+)\}\}/g, (match, key) =>
-                variables.has(key) ? variables.get(key) : match)
+                get(key) !== undefined ? get(key) : match)
         },
         request: { url: { toString: () => url }, body: { raw } },
         execution: { skipRequest: jest.fn() }
     };
+    ['environment', 'collectionVariables', 'globals'].forEach((name, index) => {
+        pm[name] = {
+            get: key => stores[index].get(key),
+            set: (key, value) => stores[index].set(key, value)
+        };
+    });
     let error;
     try {
         vm.runInNewContext(event.script.exec.join('\n'), { pm });
@@ -81,5 +90,13 @@ describe('Direct-camera Postman collection', () => {
         expect(result.pm.execution.skipRequest).not.toHaveBeenCalled();
         expect(result.variables.get(flag)).toBe('false');
         expect(runGuard(event, Object.fromEntries(result.variables)).pm.execution.skipRequest).toHaveBeenCalled();
+        for (const scope of ['environment', 'collectionVariables', 'globals']) {
+            const persistent = { [scope]: new Map([[flag, 'true'], [token, 'camera-token']]) };
+            const firstSend = runGuard(event, {}, undefined, undefined, persistent);
+            expect(firstSend.error).toBeUndefined();
+            expect(persistent[scope].get(flag)).toBe('false');
+            const secondSend = runGuard(event, {}, undefined, undefined, persistent);
+            expect(secondSend.pm.execution.skipRequest).toHaveBeenCalled();
+        }
     });
 });

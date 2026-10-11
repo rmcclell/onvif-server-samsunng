@@ -124,6 +124,9 @@
               "  pm.execution.skipRequest();",
               "  throw new Error('Back up and verify the DateAndTime OSD, set its token, and explicitly set confirm_delete_timestamp=true.');",
               "}",
+              "[pm.environment, pm.collectionVariables, pm.globals].forEach(function (scope) {",
+              "  if (scope.get('confirm_delete_timestamp') !== undefined) scope.set('confirm_delete_timestamp', 'false');",
+              "});",
               "pm.variables.set('confirm_delete_timestamp', 'false');"
             ] }
           }],
@@ -145,6 +148,9 @@
               "  pm.execution.skipRequest();",
               "  throw new Error('Save imaging settings, verify AUTO is supported, set the real source token, and explicitly set confirm_auto_ir_cut=true.');",
               "}",
+              "[pm.environment, pm.collectionVariables, pm.globals].forEach(function (scope) {",
+              "  if (scope.get('confirm_auto_ir_cut') !== undefined) scope.set('confirm_auto_ir_cut', 'false');",
+              "});",
               "pm.variables.set('confirm_auto_ir_cut', 'false');"
             ] }
           }],
