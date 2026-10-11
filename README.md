@@ -321,6 +321,59 @@ If the real camera supports pan/tilt/zoom, add a `ptz:` block:
 
 PTZ requests from the Dahua XVR are relayed to the real camera transparently, with profile tokens rewritten as needed.
 
+### One-time direct-camera settings with Postman
+
+Import [`contrib/postman/direct-camera-controls.postman_collection.json`](contrib/postman/direct-camera-controls.postman_collection.json)
+into Postman. It sends SOAP 1.2 requests to the **real camera**, not this proxy.
+The proxy does not forward imaging or overlay setting changes. Support on
+SNH-V6431BN / SNH-V6414BN depends on the installed firmware; this collection
+cannot restore controls disabled by firmware.
+
+1. In a local Postman environment, set `camera_host` to the real camera's IP
+   (for example `192.168.1.129`) and `device_url` to its ONVIF device-service
+   URL from ODM. Do not assume its port or path. Set `username` and `password`
+   locally; never commit or share credential-bearing exports.
+2. Send **GetServices**, then copy the Media v1 and Imaging v2 service `XAddr`
+   values into `media_url` and `imaging_url`. If a service is absent, do not
+   invent its endpoint.
+3. Send **GetVideoSources** and copy the real source's token into
+   `video_source_token`. Clear endpoints, tokens and confirmations when switching
+   cameras; never use the proxy's synthetic tokens. Tokens are XML text: escape
+   special characters for read requests. Write guards reject such tokens rather
+   than interpolating unsafe XML.
+4. Send **GetOSDs**, **GetImagingSettings**, and **GetOptions** as applicable.
+   Save the full current configurations locally before writing.
+5. To remove a timestamp, identify the OSD with `TextString/Type` equal to
+   `DateAndTime`, set `timestamp_osd_token`, and set
+   `confirm_delete_timestamp` to the string `true`. Send **Delete timestamp OSD**
+   individually. This deletes the overlay, not hides it; restoration requires
+   supported `CreateOSD` with the saved configuration. Repeat **GetOSDs** to
+   verify removal. An empty list may mean the timestamp is vendor-specific or
+   added by the DVR.
+6. If **GetOptions** lists `AUTO` in `IrCutFilterModes`, set
+   `confirm_auto_ir_cut` to the string `true` and send **Set automatic IR-cut mode**
+   individually. Repeat **GetImagingSettings** to verify, including after restart
+   if persistence matters. IR-cut `ON` engages the filter, `OFF` disengages it,
+   and `AUTO` lets the camera switch. This does not necessarily control IR LEDs,
+   exposure gain, slow shutter or noise reduction.
+
+Writes are skipped by default and consume a one-send confirmation. Use a current
+Postman version supporting `pm.execution.skipRequest()`; do not run the write
+folder unattended. Collection scripts reject mismatched hosts and the example
+proxy address `192.168.1.189`, but you must still verify that the destination is
+the real camera if your proxy uses another address.
+
+The collection inherits HTTP Digest authentication. Cameras may additionally
+require SOAP WS-Security UsernameToken/PasswordDigest, which Postman's Digest
+Auth does **not** generate. A `NotAuthorized` fault requires resolving
+authentication (and possibly clock skew), not repeated write attempts.
+Response checks flag SOAP faults and `Access Error` even with HTTP 200; success
+still requires reading the setting back.
+
+No microphone-gain write is included: standard Media audio encoder configuration
+controls encoding, not microphone sensitivity. A verified vendor-specific API is
+needed for these models. Read access alone does not establish write support.
+
 ---
 
 ## 10. Running the Tests
