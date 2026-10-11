@@ -1,0 +1,168 @@
+{
+  "info": {
+    "name": "Samsung direct-camera ONVIF controls",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Send individually to the REAL camera, never the virtual proxy. Set camera_host, device_url, username and password locally. Discover media_url and imaging_url with GetServices; obtain real tokens from read responses. Digest Auth does not generate WS-Security. Firmware support is not guaranteed. Writes are disabled by default; do not run write folders unattended. No microphone-gain operation is provided because no verified standard setter is available."
+  },
+  "auth": {
+    "type": "digest",
+    "digest": [
+      { "key": "username", "value": "{{username}}", "type": "string" },
+      { "key": "password", "value": "{{password}}", "type": "string" }
+    ]
+  },
+  "variable": [
+    { "key": "camera_host", "value": "" },
+    { "key": "device_url", "value": "" },
+    { "key": "media_url", "value": "" },
+    { "key": "imaging_url", "value": "" },
+    { "key": "username", "value": "" },
+    { "key": "password", "value": "" },
+    { "key": "video_source_token", "value": "" },
+    { "key": "timestamp_osd_token", "value": "" },
+    { "key": "confirm_delete_timestamp", "value": "false" },
+    { "key": "confirm_auto_ir_cut", "value": "false" }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "const url = pm.variables.replaceIn(pm.request.url.toString());",
+          "const host = pm.variables.get('camera_host');",
+          "const match = url.match(/^https?:\\/\\/([^\\/:?#]+)(?::\\d+)?(?:\\/|$)/i);",
+          "const body = pm.variables.replaceIn(pm.request.body.raw);",
+          "if (!host || host === '192.168.1.189' || !match || match[1] !== host || /\\{\\{[^}]+\\}\\}/.test(url + body)) {",
+          "  pm.execution.skipRequest();",
+          "  throw new Error('Set resolved real-camera endpoints and tokens; camera_host must match the URL and must not be the proxy.');",
+          "}"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test('HTTP success', function () { pm.expect(pm.response.code).to.be.within(200, 299); });",
+          "pm.test('SOAP response without Fault or Access Error', function () {",
+          "  const body = pm.response.text();",
+          "  pm.expect(body).to.match(/<(?:[\\w.-]+:)?Envelope\\b/);",
+          "  pm.expect(body).not.to.match(/<(?:[\\w.-]+:)?Fault\\b|Access Error/i);",
+          "});"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Read first - discovery and backups",
+      "item": [
+        {
+          "name": "1 - GetServices",
+          "request": {
+            "method": "POST",
+            "url": "{{device_url}}",
+            "description": "Copy Media v1 and Imaging v2 XAddr values to media_url and imaging_url. Use the camera endpoint from ODM, not the proxy.",
+            "header": [{ "key": "Content-Type", "value": "application/soap+xml; charset=utf-8; action=\"http://www.onvif.org/ver10/device/wsdl/GetServices\"" }],
+            "body": { "mode": "raw", "options": { "raw": { "language": "xml" } }, "raw": "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\" xmlns:tds=\"http://www.onvif.org/ver10/device/wsdl\"><s:Body><tds:GetServices><tds:IncludeCapability>false</tds:IncludeCapability></tds:GetServices></s:Body></s:Envelope>" }
+          }
+        },
+        {
+          "name": "2 - GetVideoSources",
+          "request": {
+            "method": "POST",
+            "url": "{{media_url}}",
+            "description": "Set video_source_token to the appropriate VideoSources token attribute from this real camera.",
+            "header": [{ "key": "Content-Type", "value": "application/soap+xml; charset=utf-8; action=\"http://www.onvif.org/ver10/media/wsdl/GetVideoSources\"" }],
+            "body": { "mode": "raw", "options": { "raw": { "language": "xml" } }, "raw": "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\" xmlns:trt=\"http://www.onvif.org/ver10/media/wsdl\"><s:Body><trt:GetVideoSources/></s:Body></s:Envelope>" }
+          }
+        },
+        {
+          "name": "3 - GetOSDs - save before deleting",
+          "request": {
+            "method": "POST",
+            "url": "{{media_url}}",
+            "description": "Save the full OSD configuration response locally. Find TextString/Type DateAndTime and copy its OSD token to timestamp_osd_token. Do not select a plain text/logo OSD. Empty/unsupported results do not authorize deletion.",
+            "header": [{ "key": "Content-Type", "value": "application/soap+xml; charset=utf-8; action=\"http://www.onvif.org/ver10/media/wsdl/GetOSDs\"" }],
+            "body": { "mode": "raw", "options": { "raw": { "language": "xml" } }, "raw": "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\" xmlns:trt=\"http://www.onvif.org/ver10/media/wsdl\"><s:Body><trt:GetOSDs/></s:Body></s:Envelope>" }
+          }
+        },
+        {
+          "name": "4 - GetImagingSettings - save current settings",
+          "request": {
+            "method": "POST",
+            "url": "{{imaging_url}}",
+            "description": "Save current settings before writing. Repeat after SetImagingSettings and after a restart to verify persistence.",
+            "header": [{ "key": "Content-Type", "value": "application/soap+xml; charset=utf-8; action=\"http://www.onvif.org/ver20/imaging/wsdl/GetImagingSettings\"" }],
+            "body": { "mode": "raw", "options": { "raw": { "language": "xml" } }, "raw": "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\" xmlns:timg=\"http://www.onvif.org/ver20/imaging/wsdl\"><s:Body><timg:GetImagingSettings><timg:VideoSourceToken>{{video_source_token}}</timg:VideoSourceToken></timg:GetImagingSettings></s:Body></s:Envelope>" }
+          }
+        },
+        {
+          "name": "5 - GetOptions - check AUTO support",
+          "request": {
+            "method": "POST",
+            "url": "{{imaging_url}}",
+            "description": "Verify IrCutFilterModes contains AUTO before enabling the write. This is not proof of IR LED, slow-shutter, gain or noise-reduction support.",
+            "header": [{ "key": "Content-Type", "value": "application/soap+xml; charset=utf-8; action=\"http://www.onvif.org/ver20/imaging/wsdl/GetOptions\"" }],
+            "body": { "mode": "raw", "options": { "raw": { "language": "xml" } }, "raw": "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\" xmlns:timg=\"http://www.onvif.org/ver20/imaging/wsdl\"><s:Body><timg:GetOptions><timg:VideoSourceToken>{{video_source_token}}</timg:VideoSourceToken></timg:GetOptions></s:Body></s:Envelope>" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Writes - send individually only after reviewing reads",
+      "item": [
+        {
+          "name": "Delete timestamp OSD - destructive",
+          "event": [{
+            "listen": "prerequest",
+            "script": { "type": "text/javascript", "exec": [
+              "const token = pm.variables.get('timestamp_osd_token');",
+              "if (pm.variables.get('confirm_delete_timestamp') !== 'true' || !token || /[<>&\"'{}]/.test(token)) {",
+              "  pm.execution.skipRequest();",
+              "  throw new Error('Back up and verify the DateAndTime OSD, set its token, and explicitly set confirm_delete_timestamp=true.');",
+              "}",
+              "[pm.environment, pm.collectionVariables, pm.globals].forEach(function (scope) {",
+              "  if (scope.get('confirm_delete_timestamp') !== undefined) scope.set('confirm_delete_timestamp', 'false');",
+              "});",
+              "pm.variables.set('confirm_delete_timestamp', 'false');"
+            ] }
+          }],
+          "request": {
+            "method": "POST",
+            "url": "{{media_url}}",
+            "description": "Deletes, not hides, the selected overlay. Restoration requires supported CreateOSD with your saved configuration. Confirm the backup and token before setting confirm_delete_timestamp=true. Confirmation is reset before sending; repeat GetOSDs afterward.",
+            "header": [{ "key": "Content-Type", "value": "application/soap+xml; charset=utf-8; action=\"http://www.onvif.org/ver10/media/wsdl/DeleteOSD\"" }],
+            "body": { "mode": "raw", "options": { "raw": { "language": "xml" } }, "raw": "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\" xmlns:trt=\"http://www.onvif.org/ver10/media/wsdl\"><s:Body><trt:DeleteOSD><trt:OSDToken>{{timestamp_osd_token}}</trt:OSDToken></trt:DeleteOSD></s:Body></s:Envelope>" }
+          }
+        },
+        {
+          "name": "Set automatic IR-cut mode - persistent",
+          "event": [{
+            "listen": "prerequest",
+            "script": { "type": "text/javascript", "exec": [
+              "const token = pm.variables.get('video_source_token');",
+              "if (pm.variables.get('confirm_auto_ir_cut') !== 'true' || !token || /[<>&\"'{}]/.test(token)) {",
+              "  pm.execution.skipRequest();",
+              "  throw new Error('Save imaging settings, verify AUTO is supported, set the real source token, and explicitly set confirm_auto_ir_cut=true.');",
+              "}",
+              "[pm.environment, pm.collectionVariables, pm.globals].forEach(function (scope) {",
+              "  if (scope.get('confirm_auto_ir_cut') !== undefined) scope.set('confirm_auto_ir_cut', 'false');",
+              "});",
+              "pm.variables.set('confirm_auto_ir_cut', 'false');"
+            ] }
+          }],
+          "request": {
+            "method": "POST",
+            "url": "{{imaging_url}}",
+            "description": "Requests automatic IR-cut filter switching and persistence. Not a general low-light enhancement or IR LED switch. Set confirm_auto_ir_cut=true only after reviewing GetOptions. Confirmation is reset before sending.",
+            "header": [{ "key": "Content-Type", "value": "application/soap+xml; charset=utf-8; action=\"http://www.onvif.org/ver20/imaging/wsdl/SetImagingSettings\"" }],
+            "body": { "mode": "raw", "options": { "raw": { "language": "xml" } }, "raw": "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\" xmlns:timg=\"http://www.onvif.org/ver20/imaging/wsdl\" xmlns:tt=\"http://www.onvif.org/ver10/schema\"><s:Body><timg:SetImagingSettings><timg:VideoSourceToken>{{video_source_token}}</timg:VideoSourceToken><timg:ImagingSettings><tt:IrCutFilter>AUTO</tt:IrCutFilter></timg:ImagingSettings><timg:ForcePersistence>true</timg:ForcePersistence></timg:SetImagingSettings></s:Body></s:Envelope>" }
+          }
+        }
+      ]
+    }
+  ]
+}
