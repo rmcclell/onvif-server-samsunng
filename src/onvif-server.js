@@ -233,6 +233,7 @@ function wrapSoapHttpResponse(soapServer, logger, serviceName, isDebugEnabled) {
 
 function wrapSoapRequestValidation(soapServer, handlers, logger, serviceName) {
     const supportedOperations = new Set(Object.keys(handlers));
+    const warnedOperations = new Set();
     const origXmlToObject = soapServer.wsdl.xmlToObject.bind(soapServer.wsdl);
 
     soapServer.wsdl.xmlToObject = (xml, ...args) => {
@@ -242,7 +243,12 @@ function wrapSoapRequestValidation(soapServer, handlers, logger, serviceName) {
         const operation = bodyMatch && bodyMatch[1];
 
         if (operation && operation !== 'Fault' && !supportedOperations.has(operation)) {
-            logger.warn(`${serviceName}: unsupported SOAP operation '${operation}'`);
+            if (!warnedOperations.has(operation)) {
+                warnedOperations.add(operation);
+                logger.warn(`${serviceName}: unsupported SOAP operation '${operation}' (further requests logged at debug level)`);
+            } else {
+                logger.debug(`${serviceName}: unsupported SOAP operation '${operation}'`);
+            }
             throw {
                 Fault: {
                     Code: {

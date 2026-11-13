@@ -2,6 +2,9 @@
 
 const net = require('net');
 
+// Clients (NVRs polling snapshots/RTSP) routinely drop connections abruptly; not a server fault.
+const BENIGN_CLIENT_ERRORS = new Set(['ECONNRESET', 'EPIPE', 'ECONNABORTED', 'ETIMEDOUT']);
+
 function createRtspAuthMonitor(logger, description) {
     const authenticatedRequests = new Set();
     const pendingRequests = new Map();
@@ -114,7 +117,11 @@ function createTcpProxyServer(localHost, localPort, remoteHost, remotePort, logg
         };
 
         clientSocket.on('error', err => {
-            logger.error(`TCP proxy ${localHost}:${localPort} client error: ${err.message}`);
+            if (BENIGN_CLIENT_ERRORS.has(err.code)) {
+                if (debugEnabled) logger.debug(`TCP proxy ${localHost}:${localPort} client ${client} closed: ${err.message}`);
+            } else {
+                logger.error(`TCP proxy ${localHost}:${localPort} client error: ${err.message}`);
+            }
             closePair();
         });
 
