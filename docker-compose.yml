@@ -1,0 +1,9 @@
+services:
+  onvif-server:
+    image: ghcr.io/rmcclell/onvif-server-samsunng:latest
+    # Node, ffmpeg and npm dependencies are already baked into the image.
+    # To build locally instead, replace "image" with "build: .".
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - ./onvif.yaml:/onvif.yaml:ro
